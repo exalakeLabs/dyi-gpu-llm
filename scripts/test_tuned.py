@@ -14,7 +14,11 @@ base_model = AutoModelForCausalLM.from_pretrained(
     trust_remote_code=True,
 )
 
-model = PeftModel.from_pretrained(base_model, ADAPTER_PATH)
+model = PeftModel.from_pretrained(
+    base_model,
+    ADAPTER_PATH,
+    autocast_adapter_dtype=False,
+)
 model.eval()
 
 messages = [
