@@ -1,0 +1,40 @@
+INVOICE
+From
+Yourmuscleshop
+CA
+Bill to
+Exalabs Research
+4316 E Appaloosa Rd
+Gilbert, AZ 85296
+x@exalake.com
+19072040006
+Invoice no:  YM2-
+07988
+Order date:  01-27-2026
+Payment method:  BTCPay (Bitcoin,
+Lightning Network, ...)
+S.No Product Quantity Unit price Total price
+1
+NANDROLONE
+PHENYLPROPIONATE (NPP) 100MG
+/ PER ML – GENLABS
+1 $55.00 $55.00
+2
+TRENBOLONE
+HEXAHYDROBENZYLCARBONATE
+(PARABOLAN) 100 MG / PER ML –
+GENLABS
+1 $70.00 $70.00
+3
+WINSTROL DEPOT (STANOZOLOL
+SUSPENSION - WATER BASED) 50
+MG / PER ML – GENLABS
+1 $55.00 $55.00
+4
+VIALIS - SILDENAFIL 15MG /
+TADALAFIL 10MG - PER TAB - 60
+TABLETS - GENLABS
+1 $50.00 $50.00
+Subtotal $230.00
+Shipping $20.00 via Flat rate
+Total $250.00

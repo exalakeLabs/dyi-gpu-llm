@@ -1,0 +1,573 @@
+NOTICE / AVISO
+Keypad is temporarily disabled for 1 minute after 4 consecutive incorrect entries.
+El teclado está temporalmente desactivado después durante 1 minuto de 4 entradas consecutivas incorrectas.
+2 KEYPAD / TECLADO
+1. Unlocks the lockset by entering a valid User Code.
+2. Programs the lockset by entering a valid Programming Code in
+    Programming Mode.
+1. Desbloquea el juego de cerradura al ingresar un código de usuario 
+    válido.
+2. Programa el juego de cerradura al ingresar un código de usuario 
+    válido en modo de programación.
+G39-KPDA619 Rev. 1 7/05-00
+USER GUIDE
+GUÍA DEL USUARIO
+1 OVERVIEW OF THE LOCKSET
+DESCRIPCIÓN GENERAL DEL JUEGO DE CERRADURA
+1 HOW TO LOCK / UNLOCK THE LOCKSET
+CÓMO BLOQUEAR Y DESBLOQUEAR EL JUEGO DE CERRADURA
+2 HOW TO LOCK / UNLOCK / PROGRAM THE LOCKSET
+CÓMO BLOQUEAR, DESBLOQUEAR Y PROGRAMAR EL JUEGO DE CERRADURA
+2 HOW TO PROGRAM THE LOCKSET
+CÓMO PROGRAMAR LA CERRADURA
+4 BATTERY COVER / CUBIERTA DE LA BATERÍA
+6 INTERIOR THUMBTURN / CERROJO INTERIOR
+1. Locks or unlocks the lockset manually.
+1. Se usa para bloquear o desbloquear manualmente el juego 
+    de cerradura.
+1
+1. Lock or unlock the lockset by a valid key.
+1. Bloquear o desbloquear el juego de cerradura con una clave válida.
+3 MECHANICAL KEYWAY OVERRIDE / ANULACIÓN DE LA 
+GUÍA MECÁNICA
+Volume Control
+Control de volumen
+ɾTurn on / off door lock operation volume.
+ɾVolume is always on in the programming mode.
+ɾEncender/apagar el volumen de operación de bloqueo de la puerta. 
+ɾEl volumen siempre está encendido en el modo de programación.
+Vacation Mode
+Modo de vacaciones
+ɾVaction mode temporarily disable ALL User Codes.
+ɾEl modo de vacaciones deshab ilita temporalmente TODOS los 
+    códigos de usuario. 
+Add Single-entry Code(s)
+Agregar código de una sola 
+Entrada(s)
+ɾSingle-use User Code can only be used once to unlock the lockset.
+ɾSingle-use User Code capacity: 5 sets (4 digits).  
+ɾEl código de usuario de uso único sólo se puede utilizar una vez 
+    para desbloquear la cerradura. 
+ɾCapacidad de código de usuario de uso único: 5 conﬁguraciones (4 
+    dígitos). 
+BASIC SETTINGS
+CONFIGURACIÓN BÁSICA
+ADVANCED SETTINGS
+CONFIGURACIÓN AVANZADA
+ENTER / LOCK BUTTON / BOTÓN ACEPTAR / BLOQUEAR
+1. Red light: Represents an incorrect entry or the unit is 
+    programming mode.
+2. Yellow light: Flashes when the batteries are low in power. 
+3. Green light: Represents a correct entry.
+4. Press          to activate or lock the lockset.
+1. Luz roja Representa una entrada incorrecta o que la unidad está en 
+    modo de programación.
+2. Luz amarilla: Parpadea cuando las baterías están bajas de energía.
+3. Luz verde: Representa una entrada correcta.
+4. Oprima          para activar o bloquear.
+1. Protects the batteries from unexpected damage.       
+1. Protege las baterías de daños imprevistos.
+ ÷ 
+ɾProgramming Code can be used to program or unlock the lockset.
+ɾThe default Programming Code is “123456”.
+ɾEl código de programación se puede utilizar para programar o 
+    desbloquear la cerradura.  
+ɾEl código de programación por defecto es "123456". 
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+New Programming 
+Code(6 digits)
+Nuevo código de
+programación
+(6 dígitos)
+1 0
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+New User Code 
+(4-6 digits)
+Información de 
+usuario nuevo
+(4-6 dígitos) 
+Add a User Code(S)
+Agregar un código de
+usuario
+ɾUser Code can be used to unlock the lockset.
+ɾUser Code cappcity: 10 sets (4-6 digits). 
+ɾEl código de usuario se puede utilizar para desbloquear la cerradura. 
+ɾCapacidad de código de usuario: 10 conﬁguraciones (4-6 dígitos). 
+2 0
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+Add another code
+Añadir otro código
+Delete individual User 
+/ Single-entry Code(s)
+Elimine el/los código/s de 
+entrada única / usuario 
+individual
+ɾDelete individual User Code(s).
+ɾEliminar códigos de usuario individuales.
+3 0
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+User Code / Single-entry 
+Code (4-6 digits)
+Código de usuario / 
+Código entrada única
+(4 a 6 dígitos)
+Delete another code
+Elimine otro código
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+4 0
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+Delete all User / Single-entry 
+Codes
+Elimine todos los códigos de 
+entrada única / usuario
+ɾDelete all User & Single-entry Codes.
+ɾElimine todos los códigos de entrada única y usuario.
+5 0
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+1
+Turn On
+Encender
+0Turn Off
+Apagar
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+ɾDefault Auto-lock Delay Timer : 10 seconds.
+ɾAuto-lock Delay Timer range: 10 -99 seconds.
+ɾTemporizador de retardo de autobloqueo por defecto: 10 segundos. 
+ɾRango de temporizador de retardo de autobloqueo 10-99 segundos. 
+Auto-lock Delay Timer
+Temporizador de retardo de 
+autobloqueo
+7 0
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+Enter New Amount 
+(10 - 99)
+Ingresar nuevacantidad 
+(10 - 99)
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+6 0
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+1
+Turn On
+Encender
+0Turn Off
+Apagar
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+Auto-lock
+Autobloqueo
+ɾAuto-lock is disabled by default.
+ɾEl autobloqueo está deshabilitado por defecto. 
+8 0
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+1
+Turn On
+Encender
+0Turn Off
+Apagar
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+2 1
+Programming Code
+(6 digits)
+Código de programación 
+(6 dígitos)
+Single-entry Code 
+(4 digits)
+Code  à entrée 
+unique(4 chiffres) 
+Press [SET] for 
+1 second.
+Presione [SET]
+durante 1 segundo.
+Add another code
+Añadir otro código
+5 [SET] BUTTON / [CONFIGURACIÓN] BOTÓN
+1. Press set button for 1 second to enter programming mode.   
+2. Please refer to                for more information about 
+    programming mode.
+1. Presione el botón durante 1 segundo para introducir el 
+    código de programación.
+2. Consulte               para más información sobre el modo de 
+    programación.
+2 2
+2 2
+Enter valid User Code or Programming Code.
+Ingrese un código de usuario o código de
+programación válido.
+To unlock
+Para desbloquear
+OR
+OU
+Use a mechanical key to lock.   
+Utilice una llave mecánica para 
+bloquear.
+ ÷ 
+To lock
+Para bloquear Press “          ” to lock.
+Oprima“          ”Para bloquear. OR
+OU
+Use a mechanical key to lock.   
+Utilice una llave mecánica para 
+bloquear.
+Change Programming Code
+Cambie el código de 
+programación
+Failure to change default Programming 
+Code is an unsafe practice and may 
+lead to injury.
+El no cambiar tu código de programación 
+predeterminado es una práctica insegura 
+que puede llevar a una lesión.
+NOTICE / AVISO
+ɾThe lockset will exit the programming mode and resume to the stand-by status if no input is made in 10 seconds.
+ɾ3 Beeps means something was entered incorrectly. Please redo the step again.
+ɾ El juego de cerradura saldrá del modo de programación y reanudará el modo de espera si no se oprime ningún botón durante 10 segundos.
+ɾ3 bips signiﬁcan que se ha introducido algo incorrectamente. Vuelve a hacer el paso de nuevo.
+WARNING / ¡ADVERTENCIA!
+AA
+AA
+AA
+AA
+
+3 TROUBLESHOOTING
+RESOLUCIÓN DE PROBLEMAS
+1 INSTALLATION
+INSTALACIÓN
+ANSWERS
+RESPUESTA
+QUESTIONS
+PREGUNTAS
+A.The latch does not
+    operate correctly 
+    after installation.
+A. El juego de 
+    cerradura no opera
+    correctamente
+    después de la
+    instalación.
+1. Make sure the backset on the latch is set to the proper length.
+2. Make sure prior to installation latch bolt is retracted and key is not in lockset when installing the 
+    deadbolt.
+3. Please restore to factory setting and enter the default Programming Code to set up the lock.
+4. Promptly change the Programming Code for enhanced security.
+1. Asegúrese de que la entrada del pestillo está ajustada en la longitud correcta.
+2. Antes de la instalación, asegúrese de que el perno del pestillo estaba retraído y la llave no estaba 
+    en el juego de cerradura cuando se coloca la cuchilla de cerradura/uni00A0al instalar la cerradura.
+3. Restaure la conﬁguración de fábrica e introduzca el código de programación por defecto para 
+    conﬁgurar el bloqueo.
+4. Para mayor seguridad, cambie el código de programación antes de operar la cerradura.
+B. Feel a bump while
+    turning the 
+    thumbturn or the 
+    key? 
+B. Siente un golpe al
+    girar el cerrojo o la
+    llave?
+1. Please execute lock & unlock function to allow the motor to reposition itself again.
+2. The battery is low if the battery indicator light keeps ﬂashing. Please replace with four 
+    new batteries.
+3. Please restore to factory setting and enter the default Programming Code to set up the lock.
+1. Ejecute la función de bloqueo y desbloqueo para permitir que motor se reposicione.
+2. Si el indicador de batería baja sigue parpadeando, las baterías se están agotando. Instale 
+    cuatro baterías nuevas.
+3. Restaure la conﬁguración de fábrica e introduzca el código de programación por 
+    defecto para conﬁgurar el bloqueo.
+2 OPERATION
+OPERACIÓN
+ANSWERS
+RESPUESTA
+QUESTIONS
+PREGUNTAS
+A. Battery indicator
+    keeps ﬂashing. 
+A. El indicador de la
+    batería sigue
+    parpadeando.
+1. The batteries are getting low, please replace with four new batteries for the best performance 
+    (alkaline batteries only ).
+1. Las baterías pueden tener la potencia baja; reemplace con cuatro baterías nuevas para 
+    un mejor rendimiento. (baterías alcalinas solamente)
+B. Keypad not  
+    responding. 
+B. El teclado no   
+    responde.
+1. Make sure the batteries are installed properly.
+2. The batteries are getting low if the battery indicator keeps ﬂashing. please replace with 
+    four new batteries for the best performance (alkaline batteries only ).
+3. Make sure the cable is well-connected to the port, and was not damaged during installation.
+4.Please make sure the lock has been set up and complete the bolt direction determination. 
+1. Revise la instalación de la batería.
+2. Si el indicador de batería baja sigue parpadeando, las baterías se están agotando; instale cuatro 
+    baterías nuevas para obtener un mejor desempeño (únicamente baterías alcalinas)
+3. Asegúrese de que el cable está bien conectado al puerto y que no se dañó durante la instalación.
+4. Asegúrese de que el bloqueo se ha conﬁgurado y se ha completado la determinación de 
+    la dirección del perno.
+ANSWERS
+RÉPONSES
+QUESTIONS
+QUESTIONS
+M. I cannot remove my 
+    key unless it is in 
+    the locked position.
+M. No puedo retirar mi
+     llave a menos que
+     esté en la posición 
+     de bloqueo.
+If the lock appears to be damaged or does not operate properly, please contact customer service for further assistance.
+Si la cerradura parece estar dañada o no opera correctamente, comuníquese con su proveedor local para obtener más ayuda.
+1. Un-install the interior and exterior assemblies. 
+    Before re-installation, please follow these guidelines: 
+    1) Make sure the bolt is in the retracted position. 
+    2) Do not have any key in lock cylinder.
+    3) Make sure the torque blade is inserted horizontally.
+1. Desinstale los ensambles interior y exterior.
+    Antes de volver a instalarlos, siga estas indicaciones:
+    1) Asegúrese de que el perno esté en la posición retraída.
+    2) Veriﬁque que no haya una llave en el cilindro del cerrojo.
+    3) Asegúrese de que la cuchilla de par esté colocada en posición horizontal.
+K. The red indicator is 
+    still on after setting 
+    is completed. 
+K. El indicador rojo 
+    sigue encendido 
+    después de completar 
+    la conﬁguración. 
+1. Check if [SET] button is jammed.
+2. Re-install the batteries. 
+1. Revise si el botón [SET] está atascado.
+2. Vuelva a instalar las baterías.
+L. The lockset locks 
+    when I enter my 
+    code and unlocks 
+    when I  press the         
+              .
+L. El juego de 
+    cerradura se 
+    bloquea cuando
+    ingreso mi código y 
+    se desbloquea 
+    cuando toco la 
+              .
+1. Uninstall the interior and exterior assemblies.
+    Before re-installation, please follow these guidelines:
+    1) Make sure the bolt is in the retracted position.
+    2) Do not have any key in the cylinder durring installation.
+    3) Make sure the torque blade is inserted horizontally.
+    4) Reset the unit to factory settings and reprogram the programming code and user codes.
+1. Desinstale las juntas interiores y exteriores.
+    Antes de volver a instalar, siga estas pautas:
+    1) Asegúrese de que el perno está en la posición retraída.
+    2) Asegúrese de que no haya ninguna llave en el cilindro durante la instalación.
+    3) Asegúrese de que la hoja de torsión se inserta horizontalmente.
+    4) Restablezca la unidad a los ajustes de fábrica y vuelva a programar el código de programación 
+        y los códigos de usuario
+J. How to operate the 
+    lockset in darkness? 
+J. Cómo operar el 
+    juego de cerradura 
+    en la oscuridad?
+1. Press any button to activate the lockset back light. 
+1. Oprima cualquier botón para activar la retroiluminación del juego de cerradura.
+I. Lockset is unable to 
+   reset. 
+I. El juego de cerradura
+   no se restablece.
+1. Please refer to             in the user guide to restore factory settings and reprogram all codes.
+    Hold the set button until long beep over.     
+2. The battery is low if the battery indicator light keeps ﬂashing. Please replace with four 
+    new batteries (Alkaline only).
+1. Consulte            en las instrucciones de instalación para restaurar el ajuste de fábrica.
+    Mantenga pulsado el botón de ajuste hasta que se detenga el pitido largo.
+2. Si el indicador de batería baja sigue parpadeando, las baterías se están agotando. Instale 
+    cuatro baterías nuevas (Alcalinas solamente).
+-     3
+2
+32 -     
+C. Programming Code 
+    can not be changed. 
+C. No se puede 
+    cambiar el código de
+    programación.
+1. Please refer to            in the user guide to restore factory setting and reprogram all codes.   
+1. Consulte              en las instrucciones de instalación para restablecer el ajuste de fábrica y 
+    volver a programar todos los códigos.
+-     3
+2
+3-     2
+E. Can not delete all 
+    User Codes . 
+E. No puedo borrar 
+    todos los códigos de
+    usuario.
+1. Make sure the whole code entering process is completed within 10 seconds, otherwise the unit 
+    will time out.
+2. Make sure the Programming Code has been entered correctly.
+1. Asegúrese de que se completo todo el proceso de entrada de códigos en 10 segundos, de lo 
+    contrario, se agotará el tiempo de espera de la unidad.
+2. Asegúrese de que se ha ingresado el código de programación correctamente.
+4 Access code list
+Lista de códigos de acceso
+Programming Code / Nuevo código de programación
+Name / Nombre User Code / Código de usuario
+After changing your Programming Code, do not pass your Programming Code to anyone else.
+Después de cambiar su código de programación, no dé el código de programación a cualquier otra persona.
+3 RESTORE TO FACTORY SETTINGS 
+RESTAURE LA CONFIGURACIÓN DE FÁBRICA
+Press and hold SET button while inserting the battery 
+back. Hold the set button until long beep over.
+Mantenga pulsado el botón SET mientras inserta la 
+batería. Mantenga pulsado el botón de ajuste hasta 
+que se detenga el pitido largo.
+Remove one battery
+Retire una batería
+1. This will erase all stored information, including bolt direction 
+2. Please re-enter the default Programming Code to set up the lock after restoring to/uni00A0factory settings. 
+1. Esto borrará toda la información almacenada, incluyendo dirección del perno.
+2. Vuelva a introducir el código de programación por defecto para conﬁgurar el bloqueo después de 
+    restaurar la conﬁguración de fábrica.
+AA
+AA
+AA
+AA
+AA
+AA
+AA
+AA
+AA
+F. Can not add a new 
+    User Code. 
+F. No puedo agregar 
+    un nuevo código de
+    usuario.
+1. Make sure the whole code entering process is completed within 10 seconds, otherwise 
+     the unit will time out.
+2. Make sure the Programming Code has been entered correctly.
+3. The new User Code will not be accepted when the capacity is full. Try to delete any or 
+     some existing User Codes and then add new one(s) again.  A User Code must be at least 
+     4 to 6 digits.
+1. Asegúrese de que se completo todo el proceso de entrada de códigos en 10 segundos, de 
+    lo contrario, se agotará el tiempo de espera de la unidad.
+2. Asegúrese de que se ha ingresado el código de programación correctamente.
+3. El nuevo código de usuario no será aceptado cuando se completa la capacidad. Intente 
+    borrar alguno de los códigos de usuario existentes y agregue uno nuevo. Un código de 
+    usuario debe tener entre 4 y 6 dígitos como mínimo.
+D. What should I do if
+     wrong code was 
+     entered?  
+D. Qué debo hacer si 
+     se ingresó un 
+     código erróneo? 
+1. Press          button once and continue to input code according to regular procedures. 
+1. Oprima el botón          una vez e ingrese el código de acuerdo con los procedimientos normales.
+C. Fail to set up the  
+    lock. 
+C. Error de conﬁguración 
+    de bloqueo.
+1. Please make sure the lock is installed correctly.
+2. Please install the fresh batteries and make sure the cable is connected correctly.
+1. Asegúrese de que el bloqueo se ha instalado correctamente.
+2. Instale las baterías nuevas y asegúrese de que el cable está conectado correctamente.
+G. "Auto lock" does 
+     not function. 
+G. La función "Bloqueo
+     automático" no
+     funciona.
+1. The batteries are low on power if the battery indicator keeps ﬂashing. Please replace 
+    with four new batteries for the best performance. (Alkaline Batteries Only).
+2. Please refer to              in the guide to enable the Auto-Lock function.
+1. Las baterías tienen la potencia baja si el indicador de la batería deja de parpadear. Por favor, 
+    reemplace con cuatro nuevas baterías para un mejor rendimiento. (Sólo baterías alcalinas)
+2.Consulte             en la guía para activar la función de bloqueo automático.
+-     2
+2
+2-2
+H. Lockset is not able 
+    to unlock / lock by 
+    keypad. 
+H. El sistema de 
+    restricción de 
+    acceso no se puede 
+    desbloquear / 
+    bloquear mediante 
+    el teclado.
+1. Make sure you have entered the correct User Code.
+2. The battery is low if the battery indicator light keeps ﬂashing. Please replace with four new batteries.
+3. Make sure the cable is ﬁrmly connected.
+4. Check the cable for any damage that may have occurred during installation.
+5. Make sure the batteries are properly installed. (Alkaline batteries only)
+6. Check the strike plate to make sure it is properly aligned and clear so the bolt can freely 
+    move in the hole.
+1. Asegúrese de haber ingresado el código de usuario correcto.
+2. La pile est faible si le voyant de la pile clignote sans arrêt. Veuillez les remplacer par quatre
+    nouvelles piles.
+3. Asegúrese de que el cable está conectado ﬁrmemente.
+4. Compruebe el cable por cualquier daño que pueda haber ocurrido durante la instalación.
+5. Asegúrese de que las baterías están instaladas correctamente. (Baterías alcalinas solamente)
+6. Compruebe la placa de la cerradura para asegurarse de que está correctamente alineada 
+    y despejada, a ﬁn de que el perno pueda moverse libremente en el agujero
+Warnings indicate potentially hazardous conditions, which if not avoided or corrected, may cause death or serious injury.
+Las advertencias indican condiciones peligrosas que si no se evitan o corrigen, pueden causar lesiones graves o la muerte.
+Cautions indicate potentially hazardous conditions, which if not avoided or corrected, may cause minor or moderate injury. Cautions may also warn against 
+unsafe practices.
+Las precauciones indican condiciones potencialmente peligrosas que si no se evitan o corrigen, pueden causar lesiones leves o moderadas. Las 
+precauciones también pueden advertir prácticas inseguras.
+CAUTION / PRECAUCIÓN
+Notice indicates a condition that may cause equipment or property damage.
+Se indica una condición que puede causar daños al equipo o a la propiedad.
+NOTICE / AVISO
+WARNING / ¡ADVERTENCIA!
+WARNING / ¡ADVERTENCIA!
+CAUTION / PRECAUCIÓN
+1-877-671-7011  www.schlage.com 
+1-877-671-7011  www.schlage.com           
+Customer Service / Servicio de Asistencia al Cliente
+For Limited warranty details.call Customer Service.
+Para información y limitaciones especíﬁcas de la garantía, llamando Servicio de Asistencia al Cliente
