@@ -1,3 +1,7 @@
 output/
 data/
 text/
+.venv/
+*.jsonl
+/data
+*.jsonl
