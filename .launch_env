@@ -1,0 +1,19 @@
+emulate -L zsh
+ROOT="${${(%):-%N}:A:h}"
+cd "$ROOT" || return 1
+source .venv/bin/activate || return 1
+set -a
+source .env || return 1
+set +a
+
+echo
+echo "Environment variables:"
+echo "  MODEL_ROOT: ${MODEL_ROOT:-<unset>}"
+echo "  LLAMA_TEXT_DIR: ${LLAMA_TEXT_DIR:-<unset>}"
+echo "  LLAMA_PREPARED_DIR: ${LLAMA_PREPARED_DIR:-<unset>}"
+echo "  LLAMA_RAG_DIR: ${LLAMA_RAG_DIR:-<unset>}"
+echo "  LLAMA_OUTPUT_DIR: ${LLAMA_OUTPUT_DIR:-<unset>}"
+echo "  LLAMA_DATA_DIR: ${LLAMA_DATA_DIR:-<unset>}"
+echo "  LLAMA_PDF_DIR: ${LLAMA_PDF_DIR:-<unset>}"
+echo "  GPU_ENGINE: ${GPU_ENGINE:-<unset>}"
+echo "  HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-<unset>}"

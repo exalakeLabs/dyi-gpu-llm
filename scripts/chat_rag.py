@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 import json
+import os
 from pathlib import Path
 
 import faiss
@@ -8,12 +10,25 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
 
-RAG_DIR = Path("rag")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def env_dir(var: str, default_rel: str) -> Path:
+    v = os.environ.get(var, "").strip()
+    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p
+
+
+RAG_DIR = env_dir("LLAMA_RAG_DIR", "rag")
+OUTPUT_DIR = env_dir("LLAMA_OUTPUT_DIR", "output")
+
 CHUNKS_FILE = RAG_DIR / "chunks.jsonl"
 INDEX_FILE = RAG_DIR / "index.faiss"
 
 BASE_MODEL = "Qwen/Qwen2.5-3B-Instruct"
-ADAPTER_PATH = Path("output/lora/final")  # optional
+ADAPTER_PATH = OUTPUT_DIR / "lora" / "final"  # optional
 USE_ADAPTER = ADAPTER_PATH.exists()
 
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"

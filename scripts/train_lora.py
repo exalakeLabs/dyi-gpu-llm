@@ -1,4 +1,7 @@
+#!/usr/bin/env python
+
 import os
+from pathlib import Path
 import torch
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -6,8 +9,22 @@ from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer, SFTConfig
 
 MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
-DATA_FILE = "data/train.jsonl"
-OUTPUT_DIR = "output/lora"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def env_dir(var: str, default_rel: str) -> Path:
+    v = os.environ.get(var, "").strip()
+    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p
+
+
+DATA_DIR = env_dir("LLAMA_DATA_DIR", "data")
+OUTPUT_ROOT = env_dir("LLAMA_OUTPUT_DIR", "output")
+DATA_FILE = str(DATA_DIR / "train.jsonl")
+OUTPUT_DIR = str(OUTPUT_ROOT / "lora")
+Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
 tokenizer = AutoTokenizer.from_pretrained(
     MODEL_ID,

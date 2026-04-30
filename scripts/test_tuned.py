@@ -1,9 +1,23 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
+import os
+from pathlib import Path
 
 BASE_MODEL = "Qwen/Qwen2.5-3B-Instruct"
-ADAPTER_PATH = "output/lora/final"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def env_dir(var: str, default_rel: str) -> Path:
+    v = os.environ.get(var, "").strip()
+    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p
+
+
+OUTPUT_DIR = env_dir("LLAMA_OUTPUT_DIR", "output")
+ADAPTER_PATH = str(OUTPUT_DIR / "lora" / "final")
 
 # ROCm workaround for tiny torch.isin calls on gfx1102
 _orig_isin = torch.isin

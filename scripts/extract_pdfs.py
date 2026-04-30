@@ -1,8 +1,21 @@
 from pathlib import Path
 from pypdf import PdfReader
 
-PDF_DIR = Path("pdfs")
-OUT_DIR = Path("text")
+import os
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def env_dir(var: str, default_rel: str) -> Path:
+    v = os.environ.get(var, "").strip()
+    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p
+
+
+PDF_DIR = env_dir("LLAMA_PDF_DIR", "pdfs")
+OUT_DIR = env_dir("LLAMA_TEXT_DIR", "text")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 from pypdf import PdfReader

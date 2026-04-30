@@ -5,3 +5,5 @@ text/
 *.jsonl
 /data
 *.jsonl
+prepared/
+/__pycache__/

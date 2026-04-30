@@ -1,12 +1,25 @@
+#!/usr/bin/env python
+
 import argparse
 import re
+import os
 from pathlib import Path
 from typing import Optional
 
 import requests
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def env_dir(var: str, default_rel: str) -> Path:
+    v = os.environ.get(var, "").strip()
+    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p
+
 API_BASE = "https://gutendex.com/books"
-OUT_DIR = Path("gutenberg_raw")
+OUT_DIR = env_dir("LLAMA_TEXT_DIR", "text")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PREFERRED_TEXT_KEYS = [

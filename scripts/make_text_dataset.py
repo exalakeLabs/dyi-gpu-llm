@@ -1,8 +1,21 @@
+#!/usr/bin/env python
 import json
+import os
 from pathlib import Path
 
-IN_DIR = Path("prepared")
-OUT_FILE = Path("data/train.jsonl")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def env_dir(var: str, default_rel: str) -> Path:
+    v = os.environ.get(var, "").strip()
+    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    return p
+
+IN_DIR = env_dir("LLAMA_PREPARED_DIR", "prepared")
+DATA_DIR = env_dir("LLAMA_DATA_DIR", "data")
+OUT_FILE = DATA_DIR / "train.jsonl"
 OUT_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 def chunks(text, max_chars=2500):
