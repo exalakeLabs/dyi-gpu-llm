@@ -1,9 +1,7 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import PeftModel
 
 BASE_MODEL = "Qwen/Qwen2.5-3B-Instruct"
-ADAPTER_PATH = "output/lora/final"
 
 # ROCm workaround for tiny torch.isin calls on gfx1102
 _orig_isin = torch.isin
@@ -25,17 +23,11 @@ torch.isin = _safe_isin
 
 tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
 
-base_model = AutoModelForCausalLM.from_pretrained(
+model = AutoModelForCausalLM.from_pretrained(
     BASE_MODEL,
     dtype=torch.float16,
     device_map={"": 0},
     trust_remote_code=True,
-)
-
-model = PeftModel.from_pretrained(
-    base_model,
-    ADAPTER_PATH,
-    autocast_adapter_dtype=False,
 )
 
 model.generation_config.pad_token_id = tokenizer.eos_token_id
@@ -67,5 +59,5 @@ with torch.no_grad():
         use_cache=True,
     )
 
-print("\n--- TUNED MODEL OUTPUT ---\n")
+print("\n--- BASE MODEL OUTPUT ---\n")
 print(tokenizer.decode(outputs[0], skip_special_tokens=True))

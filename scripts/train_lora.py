@@ -22,6 +22,7 @@ model = AutoModelForCausalLM.from_pretrained(
     dtype=torch.float16,
     device_map={"": 0},
     trust_remote_code=True,
+    attn_implementation="eager",  # safer on your ROCm setup
 )
 
 print("Model first param device:", next(model.parameters()).device)
@@ -31,6 +32,9 @@ print("GPU available:", torch.cuda.is_available())
 print("GPU count:", torch.cuda.device_count())
 if torch.cuda.is_available():
     print("GPU:", torch.cuda.get_device_name(0))
+
+model.gradient_checkpointing_enable()
+model.config.use_cache = False
 
 dataset = load_dataset(
     "json",
@@ -47,33 +51,19 @@ peft_config = LoraConfig(
     target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
 )
 
+# Keep adapter creation stable on ROCm
 model = get_peft_model(
     model,
     peft_config,
     autocast_adapter_dtype=False,
 )
 
+# Critical fix: trainable params must not remain fp16 when using AMP/fp16=True
+for param in model.parameters():
+    if param.requires_grad:
+        param.data = param.data.float()
+
 model.print_trainable_parameters()
-
-args = SFTConfig(
-    output_dir=OUTPUT_DIR,
-    learning_rate=2e-4,
-    per_device_train_batch_size=1,
-    gradient_accumulation_steps=8,
-    num_train_epochs=1,
-    logging_steps=1,
-    save_steps=50,
-    max_length=256,
-
-    # ROCm/gfx1102 stability settings
-    fp16=False,
-    bf16=False,
-    average_tokens_across_devices=False,
-
-    report_to="none",
-    dataloader_num_workers=0,
-    dataloader_pin_memory=False,
-)
 
 class RadeonSafeSFTTrainer(SFTTrainer):
     def get_batch_samples(self, epoch_iterator, num_batches, device):
@@ -84,6 +74,24 @@ class RadeonSafeSFTTrainer(SFTTrainer):
             except StopIteration:
                 break
         return batch_samples, None
+
+args = SFTConfig(
+    output_dir=OUTPUT_DIR,
+    learning_rate=1e-5,
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=8,
+    num_train_epochs=1,
+    logging_steps=1,
+    save_steps=50,
+    max_length=192,
+    fp16=True,
+    bf16=False,
+    max_grad_norm=0.3,
+    average_tokens_across_devices=False,
+    report_to="none",
+    dataloader_num_workers=0,
+    dataloader_pin_memory=False,
+)
 
 trainer = RadeonSafeSFTTrainer(
     model=model,

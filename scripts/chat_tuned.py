@@ -5,12 +5,10 @@ from peft import PeftModel
 BASE_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 ADAPTER_PATH = "output/lora/final"
 
-# ROCm workaround for tiny torch.isin calls on gfx1102
 _orig_isin = torch.isin
 def _safe_isin(elements, test_elements, *args, **kwargs):
     elems_dev = getattr(elements, "device", None)
     test_dev = getattr(test_elements, "device", None)
-
     if (elems_dev is not None and elems_dev.type == "cuda") or (
         test_dev is not None and test_dev.type == "cuda"
     ):
@@ -24,14 +22,12 @@ def _safe_isin(elements, test_elements, *args, **kwargs):
 torch.isin = _safe_isin
 
 tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
-
 base_model = AutoModelForCausalLM.from_pretrained(
     BASE_MODEL,
     dtype=torch.float16,
     device_map={"": 0},
     trust_remote_code=True,
 )
-
 model = PeftModel.from_pretrained(
     base_model,
     ADAPTER_PATH,
@@ -41,31 +37,36 @@ model = PeftModel.from_pretrained(
 model.generation_config.pad_token_id = tokenizer.eos_token_id
 model.generation_config.eos_token_id = tokenizer.eos_token_id
 
-messages = [
-    {"role": "system", "content": "You are a concise assistant."},
-    {"role": "user", "content": "Summarize the employee handbook communication guidelines."},
-]
+system_prompt = "You are a concise assistant."
 
-inputs = tokenizer.apply_chat_template(
-    messages,
-    add_generation_prompt=True,
-    tokenize=True,
-    return_dict=True,
-    return_tensors="pt",
-)
+while True:
+    prompt = input("\nPrompt> ").strip()
+    if not prompt or prompt.lower() in {"exit", "quit"}:
+        break
 
-inputs = {k: v.to(model.device) for k, v in inputs.items()}
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt},
+    ]
 
-with torch.no_grad():
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=180,
-        do_sample=False,
-        repetition_penalty=1.15,
-        pad_token_id=tokenizer.eos_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        use_cache=True,
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=True,
+        return_dict=True,
+        return_tensors="pt",
     )
+    inputs = {k: v.to(model.device) for k, v in inputs.items()}
 
-print("\n--- TUNED MODEL OUTPUT ---\n")
-print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+    with torch.no_grad():
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=180,
+            do_sample=False,
+            repetition_penalty=1.15,
+            pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+            use_cache=True,
+        )
+
+    print("\n" + tokenizer.decode(outputs[0], skip_special_tokens=True))
