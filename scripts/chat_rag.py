@@ -1,56 +1,22 @@
 #!/usr/bin/env python
 import json
-import os
-from pathlib import Path
 
 import faiss
 import numpy as np
-import torch
 from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import PeftModel
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def env_dir(var: str, default_rel: str) -> Path:
-    v = os.environ.get(var, "").strip()
-    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p
+from model_runtime import generate_text, load_generation_model
+from project_config import ADAPTER_DIR, env_dir
 
 
 RAG_DIR = env_dir("LLAMA_RAG_DIR", "rag")
-OUTPUT_DIR = env_dir("LLAMA_OUTPUT_DIR", "output")
 
 CHUNKS_FILE = RAG_DIR / "chunks.jsonl"
 INDEX_FILE = RAG_DIR / "index.faiss"
 
-BASE_MODEL = "Qwen/Qwen2.5-3B-Instruct"
-ADAPTER_PATH = OUTPUT_DIR / "lora" / "final"  # optional
-USE_ADAPTER = ADAPTER_PATH.exists()
-
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 TOP_K = 4
 
-# ROCm workaround for tiny torch.isin GPU calls
-_orig_isin = torch.isin
-def _safe_isin(elements, test_elements, *args, **kwargs):
-    elems_dev = getattr(elements, "device", None)
-    test_dev = getattr(test_elements, "device", None)
-
-    if (elems_dev is not None and elems_dev.type == "cuda") or (
-        test_dev is not None and test_dev.type == "cuda"
-    ):
-        out = _orig_isin(elements.cpu(), test_elements.cpu(), *args, **kwargs)
-        if elems_dev is not None and elems_dev.type == "cuda":
-            return out.to(elems_dev)
-        if test_dev is not None and test_dev.type == "cuda":
-            return out.to(test_dev)
-    return _orig_isin(elements, test_elements, *args, **kwargs)
-
-torch.isin = _safe_isin
 
 def load_chunks():
     rows = []
@@ -58,6 +24,7 @@ def load_chunks():
         for line in f:
             rows.append(json.loads(line))
     return rows
+
 
 def retrieve(query, embedder, index, rows, top_k=TOP_K):
     q = embedder.encode([query], normalize_embeddings=True)
@@ -74,6 +41,7 @@ def retrieve(query, embedder, index, rows, top_k=TOP_K):
         hits.append(row)
     return hits
 
+
 def format_context(hits):
     parts = []
     for i, hit in enumerate(hits, start=1):
@@ -83,31 +51,13 @@ def format_context(hits):
         )
     return "\n\n".join(parts)
 
-def main():
+
+def main() -> int:
     rows = load_chunks()
     index = faiss.read_index(str(INDEX_FILE))
     embedder = SentenceTransformer(EMBED_MODEL)
 
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
-
-    base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL,
-        dtype=torch.float16,
-        device_map={"": 0},
-        trust_remote_code=True,
-    )
-
-    if USE_ADAPTER:
-        model = PeftModel.from_pretrained(
-            base_model,
-            str(ADAPTER_PATH),
-            autocast_adapter_dtype=False,
-        )
-    else:
-        model = base_model
-
-    model.generation_config.pad_token_id = tokenizer.eos_token_id
-    model.generation_config.eos_token_id = tokenizer.eos_token_id
+    tokenizer, model = load_generation_model(use_adapter=ADAPTER_DIR.exists())
 
     system_prompt = (
         "You are a grounded assistant. Answer only using the provided context from the local document corpus. "
@@ -139,30 +89,21 @@ def main():
             {"role": "user", "content": user_prompt},
         ]
 
-        inputs = tokenizer.apply_chat_template(
+        answer = generate_text(
+            tokenizer,
+            model,
             messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
-
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
-
-        with torch.no_grad():
-            outputs = model.generate(
-            **inputs,
             max_new_tokens=120,
             do_sample=False,
             repetition_penalty=1.2,
             no_repeat_ngram_size=4,
-            pad_token_id=tokenizer.eos_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-            use_cache=True,
         )
 
         print("\n--- ANSWER ---\n")
-        print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+        print(answer)
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

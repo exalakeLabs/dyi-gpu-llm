@@ -19,17 +19,23 @@ Place your source `.txt` files in:
 
 If your source is PDF files, use extraction scripts first (`scripts/extract_pdfs.py`, then optional cleaning).
 
-## 3) Build the training dataset
+## 3) Run the training pipeline
 
-Create `data/train.jsonl` expected by the trainer:
+Build `data/train.jsonl` from `prepared/*.txt` and train the LoRA adapter:
+
+```bash
+python scripts/train_pipeline.py
+```
+
+The pipeline writes one JSON object per line with a `text` field, then starts LoRA training.
+
+If you only need to rebuild the dataset:
 
 ```bash
 python scripts/make_text_dataset.py
 ```
 
-This writes one JSON object per line with a `text` field.
-
-## 4) Start LoRA training
+If you already have `data/train.jsonl` and only need to train:
 
 ```bash
 python scripts/train_lora.py
@@ -48,17 +54,19 @@ Final adapter output is saved at:
 
 - `output/lora/final/`
 
-## 5) Test the tuned model
+## 4) Test the tuned model
 
 ```bash
 python scripts/test_tuned.py
 ```
 
-## 6) Optional: serve locally
+## 5) Optional: serve locally
 
 ```bash
-python scripts/serve_tuned.py
+uvicorn --app-dir scripts serve_tuned:app --host 127.0.0.1 --port 8000
 ```
+
+Serving and chat scripts share the runtime model loader in `scripts/model_runtime.py`.
 
 ## Practical tuning tips
 

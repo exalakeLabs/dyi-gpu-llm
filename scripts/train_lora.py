@@ -1,86 +1,13 @@
 #!/usr/bin/env python
 
-import os
-from pathlib import Path
 import torch
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer, SFTConfig
 
-MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from model_runtime import load_base_model, load_tokenizer
+from project_config import ADAPTER_DIR, LORA_DIR, TRAIN_FILE
 
-
-def env_dir(var: str, default_rel: str) -> Path:
-    v = os.environ.get(var, "").strip()
-    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p
-
-
-DATA_DIR = env_dir("LLAMA_DATA_DIR", "data")
-OUTPUT_ROOT = env_dir("LLAMA_OUTPUT_DIR", "output")
-DATA_FILE = str(DATA_DIR / "train.jsonl")
-OUTPUT_DIR = str(OUTPUT_ROOT / "lora")
-Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-
-tokenizer = AutoTokenizer.from_pretrained(
-    MODEL_ID,
-    trust_remote_code=True,
-)
-
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_ID,
-    dtype=torch.float16,
-    device_map={"": 0},
-    trust_remote_code=True,
-    attn_implementation="eager",  # safer on your ROCm setup
-)
-
-print("Model first param device:", next(model.parameters()).device)
-print("HIP version:", torch.version.hip)
-print("CUDA version:", torch.version.cuda)
-print("GPU available:", torch.cuda.is_available())
-print("GPU count:", torch.cuda.device_count())
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
-
-model.gradient_checkpointing_enable()
-model.config.use_cache = False
-
-dataset = load_dataset(
-    "json",
-    data_files=DATA_FILE,
-    split="train",
-)
-
-peft_config = LoraConfig(
-    r=8,
-    lora_alpha=16,
-    lora_dropout=0.05,
-    bias="none",
-    task_type="CAUSAL_LM",
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-)
-
-# Keep adapter creation stable on ROCm
-model = get_peft_model(
-    model,
-    peft_config,
-    autocast_adapter_dtype=False,
-)
-
-# Critical fix: trainable params must not remain fp16 when using AMP/fp16=True
-for param in model.parameters():
-    if param.requires_grad:
-        param.data = param.data.float()
-
-model.print_trainable_parameters()
 
 class RadeonSafeSFTTrainer(SFTTrainer):
     def get_batch_samples(self, epoch_iterator, num_batches, device):
@@ -92,35 +19,82 @@ class RadeonSafeSFTTrainer(SFTTrainer):
                 break
         return batch_samples, None
 
-args = SFTConfig(
-    output_dir=OUTPUT_DIR,
-    learning_rate=1e-5,
-    per_device_train_batch_size=1,
-    gradient_accumulation_steps=8,
-    num_train_epochs=1,
-    logging_steps=1,
-    save_steps=50,
-    max_length=192,
-    fp16=True,
-    bf16=False,
-    max_grad_norm=0.3,
-    average_tokens_across_devices=False,
-    report_to="none",
-    dataloader_num_workers=0,
-    dataloader_pin_memory=False,
-)
 
-trainer = RadeonSafeSFTTrainer(
-    model=model,
-    args=args,
-    train_dataset=dataset,
-    processing_class=tokenizer,
-)
+def print_device_info(model) -> None:
+    print("Model first param device:", next(model.parameters()).device)
+    print("HIP version:", torch.version.hip)
+    print("CUDA version:", torch.version.cuda)
+    print("GPU available:", torch.cuda.is_available())
+    print("GPU count:", torch.cuda.device_count())
+    if torch.cuda.is_available():
+        print("GPU:", torch.cuda.get_device_name(0))
 
-trainer.train()
 
-final_dir = os.path.join(OUTPUT_DIR, "final")
-trainer.model.save_pretrained(final_dir)
-tokenizer.save_pretrained(final_dir)
+def prepare_lora_model(model):
+    peft_config = LoraConfig(
+        r=8,
+        lora_alpha=16,
+        lora_dropout=0.05,
+        bias="none",
+        task_type="CAUSAL_LM",
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    )
 
-print(f"Saved LoRA adapter to {final_dir}")
+    model.gradient_checkpointing_enable()
+    model.config.use_cache = False
+    model = get_peft_model(model, peft_config, autocast_adapter_dtype=False)
+
+    for param in model.parameters():
+        if param.requires_grad:
+            param.data = param.data.float()
+
+    model.print_trainable_parameters()
+    return model
+
+
+def build_trainer(model, tokenizer, dataset):
+    args = SFTConfig(
+        output_dir=str(LORA_DIR),
+        learning_rate=1e-5,
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=8,
+        num_train_epochs=1,
+        logging_steps=1,
+        save_steps=50,
+        max_length=192,
+        fp16=True,
+        bf16=False,
+        max_grad_norm=0.3,
+        average_tokens_across_devices=False,
+        report_to="none",
+        dataloader_num_workers=0,
+        dataloader_pin_memory=False,
+    )
+    return RadeonSafeSFTTrainer(
+        model=model,
+        args=args,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+
+
+def main() -> int:
+    LORA_DIR.mkdir(parents=True, exist_ok=True)
+
+    tokenizer = load_tokenizer()
+    model = load_base_model(attn_implementation="eager")
+    print_device_info(model)
+
+    dataset = load_dataset("json", data_files=str(TRAIN_FILE), split="train")
+    model = prepare_lora_model(model)
+    trainer = build_trainer(model, tokenizer, dataset)
+    trainer.train()
+
+    trainer.model.save_pretrained(str(ADAPTER_DIR))
+    tokenizer.save_pretrained(str(ADAPTER_DIR))
+    print(f"Saved LoRA adapter to {ADAPTER_DIR}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
