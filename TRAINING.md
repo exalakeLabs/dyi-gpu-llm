@@ -17,14 +17,14 @@ Place your source `.txt` files in:
 
 - `prepared/`
 
-If your source is PDF files, use extraction scripts first (`scripts/extract_pdfs.py`, then optional cleaning).
+If your source is PDF files, run the PDF helpers first (`src/extract_pdfs.py`, then optional cleaning).
 
 ## 3) Run the training pipeline
 
 Build `data/train.jsonl` from `prepared/*.txt` and train the LoRA adapter:
 
 ```bash
-python scripts/train_pipeline.py
+python src/train_pipeline.py
 ```
 
 The pipeline writes one JSON object per line with a `text` field, then starts LoRA training.
@@ -32,16 +32,16 @@ The pipeline writes one JSON object per line with a `text` field, then starts Lo
 If you only need to rebuild the dataset:
 
 ```bash
-python scripts/make_text_dataset.py
+python src/make_text_dataset.py
 ```
 
 If you already have `data/train.jsonl` and only need to train:
 
 ```bash
-python scripts/train_lora.py
+python src/train_lora_gpu.py
 ```
 
-Default training settings in `scripts/train_lora.py`:
+Default training settings in `src/train_lora_gpu.py`:
 
 - Base model: `Qwen/Qwen2.5-3B-Instruct`
 - Data file: `data/train.jsonl`
@@ -57,16 +57,16 @@ Final adapter output is saved at:
 ## 4) Test the tuned model
 
 ```bash
-python scripts/test_tuned.py
+python src/test_tuned.py
 ```
 
 ## 5) Optional: serve locally
 
 ```bash
-uvicorn --app-dir scripts serve_tuned:app --host 127.0.0.1 --port 8000
+uvicorn --app-dir src serve_tuned:app --host 127.0.0.1 --port 8000
 ```
 
-Serving and chat scripts share the runtime model loader in `scripts/model_runtime.py`.
+Serving and chat entrypoints share the runtime model loader in `src/model_runtime.py`.
 
 ## Practical tuning tips
 
