@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Iterable, List, Tuple
 import os
 
+from scripts.clean_text import IN_DIR, OUT_DIR
+
 START_MARKERS = [
     "START OF THE PROJECT GUTENBERG EBOOK",
     "START OF THIS PROJECT GUTENBERG EBOOK",
@@ -32,16 +34,17 @@ def env_dir(var: str, default_rel: str) -> Path:
     return p
 
 
-OUT_DIR = env_dir("LLAMA_PREPARED_DIR", "prepared")
+IN_DIR = env_dir("LLAMA_PREPARED_DIR", "prepared")
+OUT_DIR = env_dir("LLAMA_DATA_DIR", "data")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Build continuation-style training pairs from Gutenberg .txt books."
     )
-    p.add_argument("--text-dir", default=OUT_DIR, help="Directory containing .txt files")
+    p.add_argument("--text-dir", default=IN_DIR, help="Directory containing .txt files")
     p.add_argument(
         "--output-train",
-        default="data/gutenberg_train.jsonl",
+        default=OUT_DIR / "train.jsonl",
         help="Output JSONL for training split",
     )
     p.add_argument(
