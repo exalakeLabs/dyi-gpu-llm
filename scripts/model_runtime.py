@@ -37,11 +37,15 @@ def load_tokenizer():
 
 
 def load_base_model(**kwargs):
+    # device_map={"": 0} targets CUDA device 0. On CPU-only builds, transformers
+    # still expands that map and touches cuda:0 during load, which raises
+    # "Cannot access accelerator device when none is available."
     model_kwargs = {
         "dtype": torch.float16,
-        "device_map": {"": 0},
         "trust_remote_code": True,
     }
+    if torch.cuda.is_available():
+        model_kwargs["device_map"] = {"": 0}
     model_kwargs.update(kwargs)
     return AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
