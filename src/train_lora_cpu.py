@@ -15,8 +15,10 @@ def print_device_info(model) -> None:
     print("Torch version:", torch.__version__)
     print("CPU threads:", torch.get_num_threads())
     print("Inter-op threads:", torch.get_num_interop_threads())
-    print("HIP version:", torch.version.hip)
-    print("CUDA version:", torch.version.cuda)
+    if torch.version.hip:
+        print("HIP version:", torch.version.hip)
+    if torch.version.cuda:
+        print("CUDA version:", torch.version.cuda)
     print("GPU available:", torch.cuda.is_available())
 
 

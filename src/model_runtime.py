@@ -5,7 +5,18 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from project_config import ADAPTER_DIR, BASE_MODEL
 
 
+def is_rocm() -> bool:
+    """Return True when running on AMD ROCm (HIP), False for NVIDIA CUDA or CPU."""
+    return torch.cuda.is_available() and torch.version.hip is not None
+
+
 def patch_rocm_isin() -> None:
+    """
+    Work around a ROCm bug where torch.isin raises on GPU tensors.
+    Only applied on ROCm; real CUDA handles isin on-device correctly.
+    """
+    if not is_rocm():
+        return
     if getattr(torch.isin, "_llama_local_patched", False):
         return
 
