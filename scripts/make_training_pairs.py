@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Iterable, List, Tuple
 import os
 
-from scripts.clean_text import IN_DIR, OUT_DIR
-
 START_MARKERS = [
     "START OF THE PROJECT GUTENBERG EBOOK",
     "START OF THIS PROJECT GUTENBERG EBOOK",
