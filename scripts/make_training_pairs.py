@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--output-val",
-        default="data/gutenberg_val.jsonl",
+        default=OUT_DIR / "gutenberg_val.jsonl",
         help="Output JSONL for validation split",
     )
     p.add_argument(
