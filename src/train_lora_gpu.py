@@ -1,61 +1,96 @@
 #!/usr/bin/env python
 
+import sys
+
 import torch
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer, SFTConfig
 
-from model_runtime import is_rocm, load_base_model, load_tokenizer
+from model_runtime import load_base_model, load_tokenizer
 from project_config import ADAPTER_DIR, LORA_DIR, TRAIN_FILE
 
 
-class _RocmSafeSFTTrainer(SFTTrainer):
-    """
-    ROCm work-around: the default get_batch_samples passes a `device` argument
-    that trips a HIP-specific path and crashes.  Override to ignore it.
-    """
-    def get_batch_samples(self, epoch_iterator, num_batches, device):
-        batch_samples = []
-        for _ in range(num_batches):
-            try:
-                batch_samples.append(next(epoch_iterator))
-            except StopIteration:
-                break
-        return batch_samples, None
+def require_nvidia_gpu() -> torch.device:
+    print("torch:", torch.__version__)
+    print("torch.version.cuda:", torch.version.cuda)
+    print("torch.version.hip:", torch.version.hip)
+    print("torch.cuda.is_available():", torch.cuda.is_available())
+    print("torch.cuda.device_count():", torch.cuda.device_count())
 
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA is not available. Refusing to run because train_lora_gpu.py must use an NVIDIA GPU."
+        )
 
-def _trainer_class():
-    return _RocmSafeSFTTrainer if is_rocm() else SFTTrainer
+    if torch.version.cuda is None:
+        raise RuntimeError(
+            "This PyTorch build does not appear to have CUDA support. Refusing to run."
+        )
+
+    device_name = torch.cuda.get_device_name(0)
+    print("GPU 0:", device_name)
+
+    if "NVIDIA" not in device_name.upper():
+        print(
+            f"Warning: detected CUDA device name does not contain 'NVIDIA': {device_name}",
+            file=sys.stderr,
+        )
+
+    device = torch.device("cuda:0")
+    torch.cuda.set_device(device)
+    return device
 
 
 def _precision_flags() -> dict:
-    """Return fp16/bf16 flags appropriate for the current GPU backend."""
+    """
+    NVIDIA-only precision selection:
+    - prefer bf16 when supported
+    - otherwise fall back to fp16
+    """
     if not torch.cuda.is_available():
         return {"fp16": False, "bf16": False}
-    if is_rocm():
-        return {"fp16": True, "bf16": False}
-    # NVIDIA: prefer bf16 on Ampere+ (sm80+), fall back to fp16
+
     if torch.cuda.is_bf16_supported():
         return {"fp16": False, "bf16": True}
+
     return {"fp16": True, "bf16": False}
 
 
 def _attn_implementation() -> str:
-    """ROCm has issues with SDPA/flash-attention; CUDA can use the faster path."""
-    return "eager" if is_rocm() else "sdpa"
+    """
+    For NVIDIA/CUDA, SDPA is the default fast path.
+    """
+    return "sdpa"
 
 
 def print_device_info(model) -> None:
-    print("Model first param device:", next(model.parameters()).device)
-    print("Backend:", "ROCm/HIP" if is_rocm() else "CUDA")
-    if torch.version.hip:
-        print("HIP version:", torch.version.hip)
-    if torch.version.cuda:
-        print("CUDA version:", torch.version.cuda)
+    first_param_device = next(model.parameters()).device
+    print("Model first param device:", first_param_device)
+    print("Backend: CUDA")
+    print("CUDA version:", torch.version.cuda)
     print("GPU available:", torch.cuda.is_available())
     print("GPU count:", torch.cuda.device_count())
     if torch.cuda.is_available():
-        print("GPU:", torch.cuda.get_device_name(0))
+        print("GPU:", torch.cuda.get_device_name(torch.cuda.current_device()))
+        print(
+            "CUDA memory allocated:",
+            f"{torch.cuda.memory_allocated() / 1024**2:.2f} MB",
+        )
+        print(
+            "CUDA memory reserved:",
+            f"{torch.cuda.memory_reserved() / 1024**2:.2f} MB",
+        )
+
+
+def assert_model_on_cuda(model) -> None:
+    first_param_device = next(model.parameters()).device
+    print("Verifying model device:", first_param_device)
+
+    if first_param_device.type != "cuda":
+        raise RuntimeError(
+            f"Model is on {first_param_device}, not CUDA. Refusing to continue."
+        )
 
 
 def prepare_lora_model(model):
@@ -95,9 +130,9 @@ def build_trainer(model, tokenizer, dataset):
         average_tokens_across_devices=False,
         report_to="none",
         dataloader_num_workers=0,
-        dataloader_pin_memory=False,
+        dataloader_pin_memory=True,
     )
-    return _trainer_class()(
+    return SFTTrainer(
         model=model,
         args=args,
         train_dataset=dataset,
@@ -106,15 +141,32 @@ def build_trainer(model, tokenizer, dataset):
 
 
 def main() -> int:
+    device = require_nvidia_gpu()
     LORA_DIR.mkdir(parents=True, exist_ok=True)
 
     tokenizer = load_tokenizer()
+
     model = load_base_model(attn_implementation=_attn_implementation())
+
+    # Force model onto CUDA and fail if it doesn't stick.
+    model = model.to(device)
+    torch.cuda.empty_cache()
     print_device_info(model)
+    assert_model_on_cuda(model)
 
     dataset = load_dataset("json", data_files=str(TRAIN_FILE), split="train")
+
     model = prepare_lora_model(model)
+    model = model.to(device)
+    assert_model_on_cuda(model)
+    print_device_info(model)
+
     trainer = build_trainer(model, tokenizer, dataset)
+
+    # Final sanity check before training.
+    assert_model_on_cuda(trainer.model)
+    print("Starting training on:", torch.cuda.get_device_name(torch.cuda.current_device()))
+
     trainer.train()
 
     trainer.model.save_pretrained(str(ADAPTER_DIR))
