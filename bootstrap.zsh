@@ -22,6 +22,8 @@ python -m pip install pypdf cryptography datasets transformers trl peft accelera
 
 python -m pip install -r requirements.txt
 
+pip install torch transformers sentence-transformers faiss-cpu tqdm
+
 python - <<'PY'
 import torch
 
