@@ -1,4 +1,4 @@
-python index_builder.py \
+python ./src/index_builder.py \
 
   --input-dir /datasets/llama/text \
 
