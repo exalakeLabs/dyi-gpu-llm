@@ -95,15 +95,18 @@ def assert_model_on_cuda(model) -> None:
 
 def prepare_lora_model(model):
     peft_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=16,
+        lora_alpha=32,
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
     )
 
-    model.gradient_checkpointing_enable()
+    # Disabled to trade VRAM for speed/throughput on the A10.
+    # Re-enable if you later increase batch/sequence length and hit OOM.
+    # model.gradient_checkpointing_enable()
+
     model.config.use_cache = False
     model = get_peft_model(model, peft_config, autocast_adapter_dtype=False)
 
@@ -119,17 +122,18 @@ def build_trainer(model, tokenizer, dataset):
     args = SFTConfig(
         output_dir=str(LORA_DIR),
         learning_rate=1e-5,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=2,
         num_train_epochs=1,
         logging_steps=1,
         save_steps=50,
-        max_length=192,
+        max_length=384,
+        packing=True,
         **_precision_flags(),
         max_grad_norm=0.3,
         average_tokens_across_devices=False,
         report_to="none",
-        dataloader_num_workers=0,
+        dataloader_num_workers=4,
         dataloader_pin_memory=True,
     )
     return SFTTrainer(
@@ -145,10 +149,8 @@ def main() -> int:
     LORA_DIR.mkdir(parents=True, exist_ok=True)
 
     tokenizer = load_tokenizer()
-
     model = load_base_model(attn_implementation=_attn_implementation())
 
-    # Force model onto CUDA and fail if it doesn't stick.
     model = model.to(device)
     torch.cuda.empty_cache()
     print_device_info(model)
@@ -163,9 +165,11 @@ def main() -> int:
 
     trainer = build_trainer(model, tokenizer, dataset)
 
-    # Final sanity check before training.
     assert_model_on_cuda(trainer.model)
-    print("Starting training on:", torch.cuda.get_device_name(torch.cuda.current_device()))
+    print(
+        "Starting training on:",
+        torch.cuda.get_device_name(torch.cuda.current_device()),
+    )
 
     trainer.train()
 
