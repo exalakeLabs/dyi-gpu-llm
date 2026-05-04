@@ -122,12 +122,12 @@ def build_trainer(model, tokenizer, dataset):
     args = SFTConfig(
         output_dir=str(LORA_DIR),
         learning_rate=1e-5,
-        per_device_train_batch_size=4,
+        per_device_train_batch_size=16,
         gradient_accumulation_steps=2,
         num_train_epochs=1,
         logging_steps=1,
         save_steps=50,
-        max_length=384,
+        max_length=768,
         packing=True,
         **_precision_flags(),
         max_grad_norm=0.3,
@@ -171,7 +171,7 @@ def main() -> int:
         torch.cuda.get_device_name(torch.cuda.current_device()),
     )
 
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True)
 
     trainer.model.save_pretrained(str(ADAPTER_DIR))
     tokenizer.save_pretrained(str(ADAPTER_DIR))
