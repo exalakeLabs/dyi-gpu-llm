@@ -74,7 +74,12 @@ fi
 source .venv/bin/activate
 python -m pip install -U pip
 
-python -m pip install torch torchvision torchaudio --index-url "$TORCH_INDEX"
+# torch: required. torchvision/torchaudio: optional (often no wheels yet for newest Python on cu124/rocm).
+python -m pip install torch --index-url "$TORCH_INDEX"
+if ! python -m pip install torchvision torchaudio --index-url "$TORCH_INDEX"; then
+  printf '\033[1;33m⚠ Skipping torchvision/torchaudio: no matching wheels on this index for your Python/platform.\033[0m\n' >&2
+  printf '\033[1;33m  (torch alone is enough for text / LoRA in this repo.)\033[0m\n' >&2
+fi
 python -m pip install pypdf cryptography datasets transformers trl peft accelerate sentencepiece requests sentence-transformers faiss-cpu fastapi uvicorn
 
 python -m pip install -r requirements.txt
