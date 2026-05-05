@@ -1,31 +1,92 @@
-#!/usr/bin/env python
-from make_training_pairs import build_dataset
-from project_config import TRAIN_FILE
-from train_lora_cpu import main as train_lora_cpu_main
-from train_lora_gpu import main as train_lora_gpu_main
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 
-def _prompt_trainer() -> int:
-    print(
-        "How do you want to train LoRA?\n"
-        "  [g] GPU — train_lora_gpu.py (uses GPU when available)\n"
-        "  [c] CPU — train_lora_cpu.py"
-    )
-    while True:
-        choice = (input("Enter g or c (default: g): ").strip().lower() or "g")
-        if choice in ("g", "gpu"):
-            return train_lora_gpu_main()
-        if choice in ("c", "cpu"):
-            return train_lora_cpu_main()
-        print("Invalid choice; enter 'g' for GPU or 'c' for CPU.")
+ROOT = Path(__file__).resolve().parent
+MAKE_PAIRS = ROOT / "make_training_pairs.py"
+TRAIN_GPU = ROOT / "train_lora_gpu.py"
+TRAIN_CPU = ROOT / "train_lora_cpu.py"
+
+
+def run_step(cmd: list[str], env: dict[str, str] | None = None) -> int:
+    print()
+    print("=" * 80)
+    print("Running:", " ".join(cmd))
+    print("=" * 80)
+    print()
+
+    result = subprocess.run(cmd, env=env)
+    return result.returncode
+
+
+def python_executable() -> str:
+    return sys.executable or "python3"
+
+
+def cuda_available(py: str) -> bool:
+    probe = """
+import torch
+print("1" if torch.cuda.is_available() else "0")
+"""
+    try:
+        result = subprocess.run(
+            [py, "-c", probe],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.stdout.strip() == "1"
+    except Exception:
+        return False
+
+
+def ensure_exists(path: Path) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"Required file not found: {path}")
 
 
 def main() -> int:
-    rows = build_dataset()
-    if rows == 0:
-        raise RuntimeError(f"No training rows were written to {TRAIN_FILE}")
-    return _prompt_trainer()
+    py = python_executable()
+
+    ensure_exists(MAKE_PAIRS)
+    ensure_exists(TRAIN_GPU)
+    ensure_exists(TRAIN_CPU)
+
+    env = os.environ.copy()
+
+    print("Project root:", ROOT)
+    print("Python:", py)
+
+    rc = run_step([py, str(MAKE_PAIRS)], env=env)
+    if rc != 0:
+        print(f"[ERROR] make_training_pairs.py failed with exit code {rc}")
+        return rc
+
+    if cuda_available(py):
+        print("[INFO] CUDA detected. Using GPU trainer.")
+        trainer = TRAIN_GPU
+    else:
+        print("[INFO] CUDA not detected. Using CPU trainer.")
+        trainer = TRAIN_CPU
+
+    rc = run_step([py, str(trainer)], env=env)
+    if rc != 0:
+        print(f"[ERROR] {trainer.name} failed with exit code {rc}")
+        return rc
+
+    print()
+    print("[OK] Training pipeline completed successfully.")
+    return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+PY
+
+chmod +x ~/llama32-local/src/train_pipeline.py
