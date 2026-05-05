@@ -88,5 +88,3 @@ def main() -> int:
 if __name__ == "__main__":
     raise SystemExit(main())
 PY
-
-chmod +x ~/llama32-local/src/train_pipeline.py
