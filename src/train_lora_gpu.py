@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 
@@ -147,9 +148,8 @@ def tokenize_dataset(dataset, tokenizer):
     if "text" in dataset.column_names:
 
         def tokenize_fn(batch):
-            texts = batch["text"]
             return tokenizer(
-                texts,
+                batch["text"],
                 truncation=True,
                 max_length=MAX_LENGTH,
                 padding=False,
@@ -184,6 +184,13 @@ def tokenize_dataset(dataset, tokenizer):
     return tokenized
 
 
+def estimate_warmup_steps(num_examples: int) -> int:
+    effective_batch = max(1, PER_DEVICE_TRAIN_BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS)
+    steps_per_epoch = max(1, math.ceil(num_examples / effective_batch))
+    total_steps = max(1, math.ceil(steps_per_epoch * NUM_TRAIN_EPOCHS))
+    return max(1, int(total_steps * WARMUP_RATIO))
+
+
 def main() -> int:
     print_cuda_debug()
 
@@ -211,27 +218,30 @@ def main() -> int:
 
     use_bf16 = torch.cuda.is_bf16_supported()
     use_fp16 = not use_bf16
+    warmup_steps = estimate_warmup_steps(len(tokenized_dataset))
 
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        overwrite_output_dir=False,
         per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
         gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
         num_train_epochs=NUM_TRAIN_EPOCHS,
         learning_rate=LEARNING_RATE,
-        warmup_ratio=WARMUP_RATIO,
-        logging_steps=LOGGING_STEPS,
-        save_steps=SAVE_STEPS,
-        save_total_limit=SAVE_TOTAL_LIMIT,
+        lr_scheduler_type="cosine",
+        warmup_steps=warmup_steps,
+        optim="adamw_torch",
         bf16=use_bf16,
         fp16=use_fp16,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        logging_strategy="steps",
+        logging_steps=LOGGING_STEPS,
+        save_strategy="steps",
+        save_steps=SAVE_STEPS,
+        save_total_limit=SAVE_TOTAL_LIMIT,
         report_to="none",
         remove_unused_columns=False,
         dataloader_pin_memory=True,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        optim="adamw_torch",
-        lr_scheduler_type="cosine",
+        disable_tqdm=False,
     )
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
