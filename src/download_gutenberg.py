@@ -8,6 +8,12 @@ from typing import Optional
 
 import requests
 
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ModuleNotFoundError:
+    pass
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
