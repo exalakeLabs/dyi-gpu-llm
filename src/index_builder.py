@@ -4,89 +4,18 @@ import argparse
 import json
 import math
 import os
-import platform
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import List, Dict, Any
 
-
-def _is_usable_ca_cert(pem: str) -> bool:
-    """Return True only for certs Python 3.14+ will accept as CA certs.
-
-    Python 3.14 enforces that any cert used as a CA must have
-    basicConstraints CA:TRUE and, when keyUsage is present, must set
-    keyCertSign.  Older/legacy certs from the system keychain that lack
-    these extensions cause "CA cert does not include key usage extension".
-    """
-    try:
-        from cryptography import x509
-        from cryptography.x509.oid import ExtensionOID
-        cert = x509.load_pem_x509_certificate(pem.encode())
-        try:
-            bc = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
-            if not bc.value.ca:
-                return False
-        except x509.ExtensionNotFound:
-            return False  # no basicConstraints → not a CA cert
-        try:
-            ku = cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE)
-            if not ku.value.key_cert_sign:
-                return False
-        except x509.ExtensionNotFound:
-            pass  # keyUsage absent is fine; Python only objects when it's present but wrong
-        return True
-    except Exception:
-        return False
-
-
-def _patch_ssl_for_corporate_proxy() -> None:
-    """Build a CA bundle from certifi + macOS system keychain (filtered to
-    valid CA certs only) and point SSL_CERT_FILE / REQUESTS_CA_BUNDLE /
-    CURL_CA_BUNDLE at it.  Both requests and httpx honour these vars."""
-    import re
-    if platform.system() != "Darwin":
-        return
-    try:
-        import certifi
-        pem_parts = [Path(certifi.where()).read_text()]
-    except Exception:
-        pem_parts = []
-
-    for kc in (
-        "/Library/Keychains/System.keychain",
-        "/System/Library/Keychains/SystemRootCertificates.keychain",
-    ):
-        try:
-            r = subprocess.run(
-                ["security", "find-certificate", "-a", "-p", kc],
-                capture_output=True, text=True, timeout=10,
-            )
-            if r.returncode != 0 or not r.stdout:
-                continue
-            for pem in re.findall(
-                r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----",
-                r.stdout, re.DOTALL,
-            ):
-                if _is_usable_ca_cert(pem):
-                    pem_parts.append(pem)
-        except Exception:
-            pass
-
-    if len(pem_parts) < 2:
-        return
-
-    tmp = tempfile.NamedTemporaryFile(
-        suffix=".pem", delete=False, mode="w", prefix="ca_bundle_"
-    )
-    tmp.write("\n".join(pem_parts))
-    tmp.close()
-
-    for var in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
-        os.environ[var] = tmp.name
-
-
-_patch_ssl_for_corporate_proxy()
+# Delegate SSL verification to the macOS Security framework so the Sigma
+# corporate proxy CA (which lacks keyUsage, causing Python 3.14/OpenSSL 3.x
+# to reject it) is trusted via the system keychain instead of certifi.
+# Must run before any import that touches ssl (sentence_transformers, httpx…).
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ModuleNotFoundError:
+    pass
 
 import faiss
 import numpy as np
