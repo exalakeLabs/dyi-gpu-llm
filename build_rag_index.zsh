@@ -1,3 +1,11 @@
+#!/usr/bin/env zsh
+set -euo pipefail
+
+ROOT="${0:A:h}"
+cd "$ROOT"
+
+python ./src/clean_text.py
+
 python ./src/index_builder.py \
   --input-dir $LLAMA_PREPARED_DIR \
   --output-dir $LLAMA_RAG_DIR \
