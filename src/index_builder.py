@@ -23,7 +23,7 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
-DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
+DEFAULT_EMBED_MODEL = "BAAI/bge-base-en-v1.5"
 
 
 def iter_text_files(root: Path):
@@ -180,7 +180,11 @@ def main():
     embeddings = np.vstack(all_embeddings).astype("float32")
     dim = embeddings.shape[1]
 
-    index = faiss.IndexFlatIP(dim)
+    # IndexHNSWFlat: approximate nearest-neighbour graph index.
+    # ~10-50× faster at query time than IndexFlatIP with <1% quality loss.
+    # M=32 (edges per node) is a good default; raise to 64 for higher recall.
+    # No training step required — safe to add vectors immediately.
+    index = faiss.IndexHNSWFlat(dim, 32, faiss.METRIC_INNER_PRODUCT)
     index.add(embeddings)
 
     faiss.write_index(index, str(output_dir / "index.faiss"))
@@ -191,7 +195,7 @@ def main():
 
     config = {
         "embed_model": args.embed_model,
-        "index_type": "faiss.IndexFlatIP",
+        "index_type": "faiss.IndexHNSWFlat(M=32)",
         "normalize_embeddings": True,
         "chunk_size_chars": args.chunk_size_chars,
         "overlap_chars": args.overlap_chars,
