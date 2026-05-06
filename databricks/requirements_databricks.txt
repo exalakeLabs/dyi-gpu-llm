@@ -1,0 +1,29 @@
+# =============================================================================
+# Requirements for Databricks ML Runtime clusters
+# =============================================================================
+# Databricks ML Runtime 14.x+ pre-installs:
+#   torch, torchvision, transformers, accelerate, peft, datasets, numpy, scipy
+#
+# Install these via the cluster's "Libraries" tab or the cluster init script.
+# Do NOT re-install torch here — it will conflict with the runtime's version.
+# =============================================================================
+
+# LoRA / fine-tuning
+trl>=0.8.0
+
+# Retrieval / RAG
+sentence-transformers>=2.6.0
+faiss-cpu>=1.7.4
+
+# Document ingestion
+pypdf>=4.0.0
+
+# Serving
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Corporate proxy SSL fix (macOS dev machines only; harmless on Linux clusters)
+truststore
+
+# Gutenberg download
+requests>=2.31.0

@@ -19,6 +19,8 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
+from project_config import IS_DATABRICKS, MLFLOW_EXPERIMENT
+
 transformers.logging.set_verbosity_info()
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
@@ -214,7 +216,7 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
         save_strategy="steps",
         save_steps=SAVE_STEPS,
         eval_strategy="no",
-        report_to="none",
+        report_to="mlflow" if IS_DATABRICKS else "none",
         log_level="info",
         logging_first_step=True,
         save_total_limit=SAVE_TOTAL_LIMIT,
@@ -251,14 +253,8 @@ def main() -> int:
     model = load_model(MODEL_NAME, tokenizer)
     model = attach_lora(model)
 
-    first_param = next(model.parameters())
-    print(f"Verifying model device: {first_param.device}")
-
     dataset = load_train_dataset(TRAIN_FILE)
     tokenized_dataset = tokenize_dataset(dataset, tokenizer)
-
-    first_param = next(model.parameters())
-    print(f"Verifying model device: {first_param.device}")
 
     print(f"Starting training on: {torch.cuda.get_device_name(0)}")
 
@@ -283,6 +279,25 @@ def main() -> int:
         data_collator=data_collator,
     )
 
+    # On Databricks, wrap in an MLflow run so hyperparameters, metrics, and the
+    # final adapter are tracked in the managed experiment.
+    if IS_DATABRICKS:
+        import mlflow
+        mlflow.set_experiment(MLFLOW_EXPERIMENT)
+        mlflow.start_run()
+        mlflow.log_params({
+            "model_name":                MODEL_NAME,
+            "max_length":                MAX_LENGTH,
+            "per_device_batch_size":     PER_DEVICE_TRAIN_BATCH_SIZE,
+            "gradient_accumulation":     GRADIENT_ACCUMULATION_STEPS,
+            "epochs":                    NUM_TRAIN_EPOCHS,
+            "learning_rate":             LEARNING_RATE,
+            "warmup_ratio":              WARMUP_RATIO,
+            "lora_r":                    8,
+            "lora_alpha":                16,
+            "num_train_examples":        len(tokenized_dataset),
+        })
+
     last_checkpoint = get_last_checkpoint(str(output_dir))
     if last_checkpoint:
         print(f"Resuming from checkpoint: {last_checkpoint}")
@@ -293,8 +308,16 @@ def main() -> int:
 
     trainer.save_model(str(output_dir))
     tokenizer.save_pretrained(str(output_dir))
-
     print(f"Saved LoRA adapter and tokenizer to: {output_dir}")
+
+    if IS_DATABRICKS:
+        import mlflow
+        # Log the adapter directory as an artifact so it can be loaded from
+        # the MLflow run without knowing the DBFS path.
+        mlflow.log_artifacts(str(output_dir), artifact_path="lora_adapter")
+        mlflow.end_run()
+        print(f"MLflow run logged to experiment: {MLFLOW_EXPERIMENT}")
+
     return 0
 
 

@@ -7,3 +7,4 @@ text/
 *.jsonl
 prepared/
 /__pycache__/
+.DS_Store
