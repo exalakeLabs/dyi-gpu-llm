@@ -138,10 +138,21 @@ print(f"\nTotal files in prepared_dir: {total_prepared}")
 # COMMAND ----------
 import json
 import math
+import os
+import sys
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+
+# Re-inject src/ into sys.path — %pip install restarts the kernel and wipes
+# any sys.path changes made in earlier cells.
+_nb_path   = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/Workspace/" + "/".join(_nb_path.lstrip("/").split("/")[1:4])
+_src       = os.path.join(_repo_root, "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+
 from index_builder import chunk_text, extract_title_author
 
 # Truststore is needed on the driver when downloading the HF model on Mac/corp proxy.

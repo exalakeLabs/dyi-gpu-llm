@@ -75,6 +75,13 @@ import json
 import faiss
 import numpy as np
 
+# Re-inject src/ — %pip install restarts the kernel and wipes sys.path.
+_nb_path   = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/Workspace/" + "/".join(_nb_path.lstrip("/").split("/")[1:4])
+_src       = os.path.join(_repo_root, "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+
 index_file  = rag_dir / "index.faiss"
 chunks_file = rag_dir / "chunks.jsonl"
 

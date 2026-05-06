@@ -89,10 +89,18 @@ print(f"Batch size   : {batch_size} × {num_gpus} GPU(s) × accum {grad_accum}")
 # MAGIC %md ### Stage A · Generate training pairs
 
 # COMMAND ----------
+import random, json
+
+# Re-inject src/ — %pip install restarts the kernel and wipes sys.path.
+_nb_path   = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/Workspace/" + "/".join(_nb_path.lstrip("/").split("/")[1:4])
+_src       = os.path.join(_repo_root, "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+
 from make_training_pairs import (
     iter_examples, load_and_clean_book, to_record, write_jsonl
 )
-import random, json
 
 prep_files = sorted(prepared_dir.glob("*.txt"))
 if max_pair_files > 0:
