@@ -27,7 +27,7 @@
 # Widget parameters — edit before running
 dbutils.widgets.text("dbfs_root",     "/dbfs/FileStore/llama32", "DBFS Root")
 dbutils.widgets.text("embed_model",   "BAAI/bge-base-en-v1.5",   "Embedding Model")
-dbutils.widgets.text("batch_size",    "64",                       "Embed Batch Size")
+dbutils.widgets.text("batch_size",    "256",                      "Embed Batch Size")
 dbutils.widgets.text("chunk_size",    "1800",                     "Chunk Size (chars)")
 dbutils.widgets.text("overlap",       "250",                      "Overlap (chars)")
 dbutils.widgets.text("max_files",     "0",                        "Max Files (0 = all)")
