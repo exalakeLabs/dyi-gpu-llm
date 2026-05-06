@@ -1,4 +1,4 @@
-python chat_rag_qwen_bge.py \
+python ./src/chat_rag_qwen_bge.py \
   --index-dir ~/llrun/rag \
   --retrieve-k 24 \
   --rerank-top-n 6 \
