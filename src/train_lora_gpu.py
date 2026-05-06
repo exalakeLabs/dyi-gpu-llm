@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import torch
+import transformers
 from datasets import load_dataset
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import (
@@ -18,6 +19,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
+transformers.logging.set_verbosity_info()
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
 TRAIN_FILE = os.environ.get("TRAIN_FILE", "/home/alex2/llrun/data/train.jsonl")
@@ -28,8 +30,10 @@ PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", 
 GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "16"))
 NUM_TRAIN_EPOCHS = float(os.environ.get("NUM_TRAIN_EPOCHS", "1"))
 LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "2e-4"))
-LOGGING_STEPS = int(os.environ.get("LOGGING_STEPS", "10"))
-SAVE_STEPS = int(os.environ.get("SAVE_STEPS", "200"))
+
+# Verbose logging / checkpoint defaults
+LOGGING_STEPS = int(os.environ.get("LOGGING_STEPS", "1"))
+SAVE_STEPS = int(os.environ.get("SAVE_STEPS", "100"))
 SAVE_TOTAL_LIMIT = int(os.environ.get("SAVE_TOTAL_LIMIT", "3"))
 WARMUP_RATIO = float(os.environ.get("WARMUP_RATIO", "0.03"))
 
@@ -191,6 +195,48 @@ def estimate_warmup_steps(num_examples: int) -> int:
     return max(1, int(total_steps * WARMUP_RATIO))
 
 
+def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, warmup_steps: int):
+    kwargs = dict(
+        output_dir=str(output_dir),
+        per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
+        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
+        num_train_epochs=NUM_TRAIN_EPOCHS,
+        learning_rate=LEARNING_RATE,
+        lr_scheduler_type="cosine",
+        warmup_steps=warmup_steps,
+        optim="adamw_torch",
+        bf16=use_bf16,
+        fp16=use_fp16,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        logging_strategy="steps",
+        logging_steps=LOGGING_STEPS,
+        save_strategy="steps",
+        save_steps=SAVE_STEPS,
+        eval_strategy="no",
+        report_to="none",
+        log_level="info",
+        logging_first_step=True,
+        save_total_limit=SAVE_TOTAL_LIMIT,
+        remove_unused_columns=False,
+        dataloader_pin_memory=True,
+        disable_tqdm=True,
+    )
+
+    # Some transformers versions support this; older ones may not.
+    try:
+        return TrainingArguments(
+            include_num_input_tokens_seen=True,
+            **kwargs,
+        )
+    except TypeError:
+        print(
+            "Warning: this transformers version does not support "
+            "include_num_input_tokens_seen=True; continuing without it."
+        )
+        return TrainingArguments(**kwargs)
+
+
 def main() -> int:
     print_cuda_debug()
 
@@ -220,28 +266,11 @@ def main() -> int:
     use_fp16 = not use_bf16
     warmup_steps = estimate_warmup_steps(len(tokenized_dataset))
 
-    training_args = TrainingArguments(
-        output_dir=str(output_dir),
-        per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
-        num_train_epochs=NUM_TRAIN_EPOCHS,
-        learning_rate=LEARNING_RATE,
-        lr_scheduler_type="cosine",
+    training_args = make_training_arguments(
+        output_dir=output_dir,
+        use_bf16=use_bf16,
+        use_fp16=use_fp16,
         warmup_steps=warmup_steps,
-        optim="adamw_torch",
-        bf16=use_bf16,
-        fp16=use_fp16,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        logging_strategy="steps",
-        logging_steps=LOGGING_STEPS,
-        save_strategy="steps",
-        save_steps=SAVE_STEPS,
-        save_total_limit=SAVE_TOTAL_LIMIT,
-        report_to="none",
-        remove_unused_columns=False,
-        dataloader_pin_memory=True,
-        disable_tqdm=False,
     )
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
