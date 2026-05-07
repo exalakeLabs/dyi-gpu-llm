@@ -188,11 +188,18 @@ if max_files > 0:
 import torch
 if torch.cuda.is_available():
     torch.cuda.empty_cache()
-    free_gb  = (torch.cuda.get_device_properties(0).total_memory
-                - torch.cuda.memory_reserved(0)) / 1e9
-    total_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-    print(f"GPU: {torch.cuda.get_device_name(0)}  "
-          f"free={free_gb:.1f} GB / total={total_gb:.1f} GB")
+    # mem_get_info() reports true free memory across ALL processes on the GPU,
+    # unlike memory_reserved() which only covers this Python process.
+    free_bytes, total_bytes = torch.cuda.mem_get_info(0)
+    free_gb  = free_bytes  / 1e9
+    total_gb = total_bytes / 1e9
+    alloc_gb = torch.cuda.memory_allocated(0) / 1e9
+    print(f"GPU           : {torch.cuda.get_device_name(0)}")
+    print(f"Free (global) : {free_gb:.1f} GB / {total_gb:.1f} GB")
+    print(f"Allocated here: {alloc_gb:.2f} GB")
+    if free_gb < 2.0:
+        print("⚠️  Less than 2 GB free — detach other notebooks from this cluster "
+              "before running Stage B, or use a dedicated indexing cluster.")
 else:
     print("No CUDA device — running on CPU")
 
@@ -201,9 +208,10 @@ print(f"Loading embedding model: {embed_model} …")
 
 # Load in FP16 to halve model memory (~450 MB FP32 → ~225 MB FP16).
 # bge-base-en-v1.5 produces identical results in FP16 for retrieval tasks.
+# Use "dtype" (not the deprecated "torch_dtype") for transformers ≥ 4.45.
 embedder = SentenceTransformer(
     embed_model,
-    model_kwargs={"torch_dtype": torch.float16},
+    model_kwargs={"dtype": torch.float16},
 )
 if torch.cuda.is_available():
     alloc_gb = torch.cuda.memory_allocated(0) / 1e9
