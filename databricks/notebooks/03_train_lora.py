@@ -28,16 +28,17 @@
 
 # COMMAND ----------
 # Widget parameters — edit before running
-dbutils.widgets.text("dbfs_root",         "/dbfs/FileStore/llama32",   "DBFS Root")
-dbutils.widgets.text("base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
-dbutils.widgets.text("num_gpus",          "1",                          "GPUs (TorchDistributor num_processes)")
-dbutils.widgets.text("num_epochs",        "1",                          "Training Epochs")
-dbutils.widgets.text("batch_size",        "1",                          "Per-device Batch Size")
-dbutils.widgets.text("grad_accum",        "16",                         "Gradient Accumulation Steps")
-dbutils.widgets.text("learning_rate",     "2e-4",                       "Learning Rate")
-dbutils.widgets.text("max_length",        "512",                        "Max Sequence Length")
-dbutils.widgets.text("lora_r",            "8",                          "LoRA rank (r)")
-dbutils.widgets.text("max_pair_files",    "0",                          "Max files for pair gen (0=all)")
+dbutils.widgets.text(    "dbfs_root",         "/dbfs/FileStore/llama32",   "DBFS Root")
+dbutils.widgets.text(    "base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
+dbutils.widgets.text(    "num_gpus",          "1",                          "GPUs (TorchDistributor num_processes)")
+dbutils.widgets.dropdown("local_mode",        "true",  ["true", "false"],   "local_mode (false = multi-node)")
+dbutils.widgets.text(    "num_epochs",        "1",                          "Training Epochs")
+dbutils.widgets.text(    "batch_size",        "2",                          "Per-device Batch Size")
+dbutils.widgets.text(    "grad_accum",        "8",                          "Gradient Accumulation Steps")
+dbutils.widgets.text(    "learning_rate",     "3e-4",                       "Learning Rate")
+dbutils.widgets.text(    "max_length",        "512",                        "Max Sequence Length")
+dbutils.widgets.text(    "lora_r",            "16",                         "LoRA rank (r)")
+dbutils.widgets.text(    "max_pair_files",    "0",                          "Max files for pair gen (0=all)")
 
 # COMMAND ----------
 import os, sys, math
@@ -46,6 +47,7 @@ from pathlib import Path
 dbfs_root     = dbutils.widgets.get("dbfs_root")
 base_model    = dbutils.widgets.get("base_model")
 num_gpus      = int(dbutils.widgets.get("num_gpus"))
+local_mode    = dbutils.widgets.get("local_mode").lower() == "true"
 num_epochs    = float(dbutils.widgets.get("num_epochs"))
 batch_size    = int(dbutils.widgets.get("batch_size"))
 grad_accum    = int(dbutils.widgets.get("grad_accum"))
@@ -78,12 +80,12 @@ lora_dir.mkdir(parents=True, exist_ok=True)
 train_file = data_dir / "train.jsonl"
 val_file   = data_dir / "val.jsonl"
 
-print(f"DBFS root    : {dbfs_root}")
-print(f"Base model   : {base_model}")
-print(f"GPUs         : {num_gpus}")
-print(f"LoRA r       : {lora_r}")
-print(f"Epochs       : {num_epochs}")
-print(f"Batch size   : {batch_size} × {num_gpus} GPU(s) × accum {grad_accum}")
+print(f"DBFS root      : {dbfs_root}")
+print(f"Base model     : {base_model}")
+print(f"GPUs           : {num_gpus}  (local_mode={local_mode})")
+print(f"LoRA r / alpha : {lora_r} / {lora_r * 2}")
+print(f"Epochs         : {num_epochs}")
+print(f"Effective batch: {batch_size} × {num_gpus} GPU(s) × accum {grad_accum} = {batch_size * num_gpus * grad_accum}")
 
 # COMMAND ----------
 # MAGIC %md ### Stage A · Generate training pairs
@@ -314,7 +316,7 @@ with mlflow.start_run() as run:
 
     distributor = TorchDistributor(
         num_processes=num_gpus,
-        local_mode=True,     # set to False for multi-node
+        local_mode=local_mode,   # True = single-node multi-GPU; False = multi-node
         use_gpu=True,
     )
     distributor.run(
