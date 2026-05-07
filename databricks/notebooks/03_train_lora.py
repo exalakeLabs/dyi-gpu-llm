@@ -219,134 +219,173 @@ def _train_worker(
     max_length: int,
     lora_r: int,
 ) -> None:
-    import math, os
-    import torch
-    from datasets import load_dataset
-    from peft import LoraConfig, get_peft_model
-    from trl import SFTTrainer, SFTConfig
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    from transformers.trainer_utils import get_last_checkpoint
+    import math, os, traceback as _tb
+    # Disable Databricks MLflow autologging inside workers — autolog tries to
+    # attach to the driver-side run across process boundaries and causes NCCL
+    # barrier failures when the driver run is still open.
+    try:
+        import mlflow as _mlflow
+        _mlflow.autolog(disable=True)
+    except Exception:
+        pass
 
-    rank       = int(os.environ.get("RANK", "0"))
-    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    try:
+        import torch
+        from datasets import load_dataset
+        from peft import LoraConfig, get_peft_model
+        from trl import SFTTrainer, SFTConfig
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers.trainer_utils import get_last_checkpoint
 
-    print(f"[rank {rank}/{world_size}] local_rank={local_rank}  GPU={torch.cuda.get_device_name(local_rank)}")
+        rank       = int(os.environ.get("RANK", "0"))
+        local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+        world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
-    use_bf16 = torch.cuda.is_bf16_supported()
-    precision = {"bf16": use_bf16, "fp16": not use_bf16}
+        print(f"[rank {rank}/{world_size}] local_rank={local_rank}  GPU={torch.cuda.get_device_name(local_rank)}")
 
-    tokenizer = AutoTokenizer.from_pretrained(base_model, use_fast=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
+        # Print package versions so we can verify compatibility
+        import peft as _peft, trl as _trl, transformers as _tf
+        print(f"[rank {rank}] peft={_peft.__version__}  trl={_trl.__version__}  transformers={_tf.__version__}")
 
-    # Use device_map={"": local_rank} (not "auto") to prevent model parallelism
-    # from conflicting with DDP across ranks.
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model,
-        dtype=torch.bfloat16 if use_bf16 else torch.float16,
-        device_map={"": local_rank},
-        attn_implementation="sdpa",
-    )
-    model.config.use_cache = False
+        use_bf16 = torch.cuda.is_bf16_supported()
+        precision = {"bf16": use_bf16, "fp16": not use_bf16}
 
-    peft_config = LoraConfig(
-        r=lora_r,
-        lora_alpha=lora_r * 2,
-        lora_dropout=0.05,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
-    )
-    model = get_peft_model(model, peft_config, autocast_adapter_dtype=False)
+        tokenizer = AutoTokenizer.from_pretrained(base_model, use_fast=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.padding_side = "right"
 
-    if rank == 0:
-        model.print_trainable_parameters()
+        # Use device_map={"": local_rank} (not "auto") to prevent model parallelism
+        # from conflicting with DDP across ranks.
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model,
+            dtype=torch.bfloat16 if use_bf16 else torch.float16,
+            device_map={"": local_rank},
+            attn_implementation="sdpa",
+        )
+        model.config.use_cache = False
 
-    dataset = load_dataset("json", data_files=train_file, split="train")
+        peft_config = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_r * 2,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                            "gate_proj", "up_proj", "down_proj"],
+        )
 
-    # Estimate warmup steps
-    eff_batch     = max(1, batch_size * grad_accum * world_size)
-    steps_per_ep  = max(1, math.ceil(len(dataset) / eff_batch))
-    total_steps   = max(1, math.ceil(steps_per_ep * num_epochs))
-    warmup_steps  = max(1, int(total_steps * 0.03))
+        # autocast_adapter_dtype added in peft 0.8.0 — skip on older versions
+        import importlib.metadata as _imeta
+        from packaging.version import Version as _V
+        _peft_ver = _V(_imeta.version("peft"))
+        if _peft_ver >= _V("0.8.0"):
+            model = get_peft_model(model, peft_config, autocast_adapter_dtype=False)
+        else:
+            model = get_peft_model(model, peft_config)
 
-    sft_args = SFTConfig(
-        output_dir=lora_dir,
-        num_train_epochs=num_epochs,
-        per_device_train_batch_size=batch_size,
-        gradient_accumulation_steps=grad_accum,
-        learning_rate=learning_rate,
-        lr_scheduler_type="cosine",
-        warmup_steps=warmup_steps,
-        max_seq_length=max_length,
-        packing=False,
-        logging_steps=1,
-        logging_first_step=True,
-        save_steps=100,
-        save_total_limit=3,
-        eval_strategy="no",
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        ddp_find_unused_parameters=False,
-        average_tokens_across_devices=True,
-        report_to="none",          # MLflow logged from driver only
-        dataloader_num_workers=4,
-        dataloader_pin_memory=True,
-        disable_tqdm=True,
-        **precision,
-    )
+        if rank == 0:
+            model.print_trainable_parameters()
 
-    trainer = SFTTrainer(
-        model=model,
-        args=sft_args,
-        train_dataset=dataset,
-        processing_class=tokenizer,
-    )
+        dataset = load_dataset("json", data_files=train_file, split="train")
 
-    last_ckpt = get_last_checkpoint(lora_dir)
-    if last_ckpt:
-        print(f"[rank {rank}] Resuming from checkpoint: {last_ckpt}")
-    trainer.train(resume_from_checkpoint=last_ckpt or False)
+        # Estimate warmup steps
+        eff_batch     = max(1, batch_size * grad_accum * world_size)
+        steps_per_ep  = max(1, math.ceil(len(dataset) / eff_batch))
+        total_steps   = max(1, math.ceil(steps_per_ep * num_epochs))
+        warmup_steps  = max(1, int(total_steps * 0.03))
 
-    if rank == 0:
-        trainer.model.save_pretrained(adapter_dir)
-        tokenizer.save_pretrained(adapter_dir)
-        print(f"[rank 0] Saved LoRA adapter → {adapter_dir}")
+        # average_tokens_across_devices added in trl 0.9.1 — skip on older versions
+        _trl_ver = _V(_imeta.version("trl"))
+        _extra_sft: dict = {}
+        if _trl_ver >= _V("0.9.1"):
+            _extra_sft["average_tokens_across_devices"] = True
+
+        sft_args = SFTConfig(
+            output_dir=lora_dir,
+            num_train_epochs=num_epochs,
+            per_device_train_batch_size=batch_size,
+            gradient_accumulation_steps=grad_accum,
+            learning_rate=learning_rate,
+            lr_scheduler_type="cosine",
+            warmup_steps=warmup_steps,
+            max_seq_length=max_length,
+            packing=False,
+            logging_steps=1,
+            logging_first_step=True,
+            save_steps=100,
+            save_total_limit=3,
+            eval_strategy="no",
+            gradient_checkpointing=True,
+            gradient_checkpointing_kwargs={"use_reentrant": False},
+            ddp_find_unused_parameters=False,
+            report_to="none",          # MLflow logged from driver only
+            dataloader_num_workers=4,
+            dataloader_pin_memory=True,
+            disable_tqdm=True,
+            **_extra_sft,
+            **precision,
+        )
+
+        trainer = SFTTrainer(
+            model=model,
+            args=sft_args,
+            train_dataset=dataset,
+            processing_class=tokenizer,
+        )
+
+        last_ckpt = get_last_checkpoint(lora_dir)
+        if last_ckpt:
+            print(f"[rank {rank}] Resuming from checkpoint: {last_ckpt}")
+        trainer.train(resume_from_checkpoint=last_ckpt or False)
+
+        if rank == 0:
+            trainer.model.save_pretrained(adapter_dir)
+            tokenizer.save_pretrained(adapter_dir)
+            print(f"[rank 0] Saved LoRA adapter → {adapter_dir}")
+
+    except Exception as _e:
+        rank = int(os.environ.get("RANK", "?"))
+        print(f"\n[rank {rank}] *** WORKER EXCEPTION ***\n{_tb.format_exc()}")
+        raise
 
 
 # ---------------------------------------------------------------------------
 # Launch via TorchDistributor
+# Close the MLflow run BEFORE calling distributor.run() so that MLFLOW_RUN_ID
+# is not set in the environment that gets inherited by worker processes.
+# Databricks autologging otherwise tries to attach workers to the driver run
+# across node boundaries, triggering NCCL barrier failures.
 # ---------------------------------------------------------------------------
 from pyspark.ml.torch.distributor import TorchDistributor
 
-with mlflow.start_run() as run:
+with mlflow.start_run() as _setup_run:
     mlflow.log_params(hparams)
-    print(f"MLflow run: {run.info.run_id}")
+    _run_id = _setup_run.info.run_id
+    print(f"MLflow run: {_run_id}")
+# ← run is now CLOSED; MLFLOW_RUN_ID cleared from environment
 
-    distributor = TorchDistributor(
-        num_processes=num_gpus,
-        local_mode=local_mode,   # True = single-node multi-GPU; False = multi-node
-        use_gpu=True,
-    )
-    distributor.run(
-        _train_worker,
-        base_model,
-        str(train_file),
-        str(lora_dir),
-        str(adapter_dir),
-        num_epochs,
-        batch_size,
-        grad_accum,
-        learning_rate,
-        max_length,
-        lora_r,
-    )
+distributor = TorchDistributor(
+    num_processes=num_gpus,
+    local_mode=local_mode,   # True = single-node multi-GPU; False = multi-node
+    use_gpu=True,
+)
+distributor.run(
+    _train_worker,
+    base_model,
+    str(train_file),
+    str(lora_dir),
+    str(adapter_dir),
+    num_epochs,
+    batch_size,
+    grad_accum,
+    learning_rate,
+    max_length,
+    lora_r,
+)
 
-    # Log the adapter as an MLflow artifact so it can be retrieved without
-    # knowing the DBFS path.
+# Reopen the same run just to attach artifacts — no active run during training.
+with mlflow.start_run(run_id=_run_id):
     if adapter_dir.exists():
         mlflow.log_artifacts(str(adapter_dir), artifact_path="lora_adapter")
         print(f"MLflow artifact logged: lora_adapter")
