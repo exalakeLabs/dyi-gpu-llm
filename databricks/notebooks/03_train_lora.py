@@ -106,7 +106,7 @@ _src       = os.path.join(_repo_root, "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-from make_training_pairs import (
+from src.make_training_pairs import (
     iter_examples, load_and_clean_book, to_record, write_jsonl
 )
 
