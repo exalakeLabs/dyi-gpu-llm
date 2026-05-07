@@ -104,7 +104,7 @@ def download_corpus(queries, text_dir: Path):
         total_downloaded += count
         total_skipped    += skipped
 
-    return  , total_skipped
+    return total_downloaded, total_skipped
 
 # COMMAND ----------
 
