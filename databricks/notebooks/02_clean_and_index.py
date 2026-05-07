@@ -34,7 +34,7 @@ dbutils.library.restartPython()
 # Widget parameters — edit before running
 dbutils.widgets.text("dbfs_root",     "/Volumes/customer_success/exalabs_writeback/fileupload", "DBFS Root")
 dbutils.widgets.text("embed_model",   "BAAI/bge-base-en-v1.5",   "Embedding Model")
-dbutils.widgets.text("batch_size",    "256",                      "Embed Batch Size")
+dbutils.widgets.text("batch_size",    "128",                      "Embed Batch Size")
 dbutils.widgets.text("chunk_size",    "1800",                     "Chunk Size (chars)")
 dbutils.widgets.text("overlap",       "250",                      "Overlap (chars)")
 dbutils.widgets.text("max_files",     "0",                        "Max Files (0 = all)")
@@ -53,6 +53,9 @@ os.environ["LLAMA_DBFS_ROOT"]    = dbfs_root
 os.environ["LLAMA_TEXT_DIR"]     = f"{dbfs_root}/text"
 os.environ["LLAMA_PREPARED_DIR"] = f"{dbfs_root}/prepared"
 os.environ["LLAMA_RAG_DIR"]      = f"{dbfs_root}/rag"
+# Reduce allocator fragmentation — helps when GPU memory is partially occupied
+# by Spark executors or previous notebook sessions.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 _nb_path   = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
 _repo_root = "/Workspace/" + "/".join(_nb_path.lstrip("/").split("/")[1:4])
@@ -178,9 +181,33 @@ prep_files = sorted(prepared_dir.glob("*.txt"))
 if max_files > 0:
     prep_files = prep_files[:max_files]
 
-print(f"Files to index: {len(prep_files)}")
+# ---------------------------------------------------------------------------
+# GPU memory hygiene — Spark executors (Stage A) and previous notebooks may
+# have left allocations on the GPU.  Release them before loading the embedder.
+# ---------------------------------------------------------------------------
+import torch
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    free_gb  = (torch.cuda.get_device_properties(0).total_memory
+                - torch.cuda.memory_reserved(0)) / 1e9
+    total_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    print(f"GPU: {torch.cuda.get_device_name(0)}  "
+          f"free={free_gb:.1f} GB / total={total_gb:.1f} GB")
+else:
+    print("No CUDA device — running on CPU")
+
+print(f"\nFiles to index: {len(prep_files)}")
 print(f"Loading embedding model: {embed_model} …")
-embedder = SentenceTransformer(embed_model)
+
+# Load in FP16 to halve model memory (~450 MB FP32 → ~225 MB FP16).
+# bge-base-en-v1.5 produces identical results in FP16 for retrieval tasks.
+embedder = SentenceTransformer(
+    embed_model,
+    model_kwargs={"torch_dtype": torch.float16},
+)
+if torch.cuda.is_available():
+    alloc_gb = torch.cuda.memory_allocated(0) / 1e9
+    print(f"Model loaded — GPU allocated: {alloc_gb:.2f} GB")
 
 all_meta        = []
 batch_chunks    = []
