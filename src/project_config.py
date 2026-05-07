@@ -36,7 +36,7 @@ if IS_DATABRICKS:
     # driver and all worker nodes.  Override with LLAMA_DBFS_ROOT if you use
     # Unity Catalog Volumes or a different mount point.
     _dbfs_root = Path(
-        os.environ.get("", "/Volumes/customer_success/exalabs_writeback/fileupload/")
+        os.environ.get("LLAMA_DBFS_ROOT", "/Volumes/customer_success/exalabs_writeback/fileupload")
     )
 
     TEXT_DIR     = _dbfs_root / "text"
@@ -83,5 +83,5 @@ else:
 # MLflow experiment (Databricks managed tracking by default)
 # ---------------------------------------------------------------------------
 MLFLOW_EXPERIMENT: str = os.environ.get(
-    "MLFLOW_EXPERIMENT_NAME", "/Volumes/customer_success/exalabs_writeback/fileupload/lora-finetune"
+    "MLFLOW_EXPERIMENT_NAME", "/Shared/llama32-local/lora-finetune"
 )
