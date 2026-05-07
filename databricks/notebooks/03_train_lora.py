@@ -32,7 +32,7 @@
 # COMMAND ----------
 
 # Widget parameters — edit before running
-dbutils.widgets.text(    "dbfs_root",         "/Users/alex.gauthier@sigmacomputing.com/Lora-slow",   "DBFS Root")
+dbutils.widgets.text(    "dbfs_root",         "/Volumes/customer_success/exalabs_writeback/llrun",   "DBFS Root")
 dbutils.widgets.text(    "base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
 dbutils.widgets.text(    "num_gpus",          "8",                          "GPUs (TorchDistributor num_processes)")
 dbutils.widgets.dropdown("local_mode",        "false",  ["true", "false"],   "local_mode (false = multi-node)")

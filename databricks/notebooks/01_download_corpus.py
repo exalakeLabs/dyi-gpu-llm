@@ -1,7 +1,7 @@
 # Databricks notebook source
 # /// script
 # [tool.databricks.environment]
-# environment_version = "4"
+# environment_version = "5"
 # ///
 # MAGIC %md
 # MAGIC ###### =============================================================================
@@ -104,7 +104,7 @@ def download_corpus(queries, text_dir: Path):
         total_downloaded += count
         total_skipped    += skipped
 
-    return total_downloaded, total_skipped
+    return  , total_skipped
 
 # COMMAND ----------
 
