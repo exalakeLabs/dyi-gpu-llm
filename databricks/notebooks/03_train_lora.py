@@ -107,7 +107,7 @@ _src       = os.path.join(_repo_root, "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-from src.make_training_pairs import (
+from make_training_pairs import (
     iter_examples, load_and_clean_book, to_record, write_jsonl
 )
 
@@ -181,8 +181,9 @@ print(f"Val records  : {len(val_recs)}   →  {val_file}")
 
 import mlflow
 
+# mlflow.set_experiment() auto-creates the experiment on Databricks —
+# os.makedirs won't work here since /Users/... is a Workspace path, not a filesystem path.
 MLFLOW_EXPERIMENT = "/Users/alex.gauthier@sigmacomputing.com/Lora-slow/Lora-MLFLOW"
-os.makedirs(os.path.dirname(MLFLOW_EXPERIMENT), exist_ok=True)
 
 mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
