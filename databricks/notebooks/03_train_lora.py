@@ -26,8 +26,7 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install --quiet trl>=0.8.0 truststore
-# MAGIC dbutils.library.restartPython()
+# MAGIC %pip install --quiet peft accelerate trl>=0.8.0 truststore
 
 # COMMAND ----------
 

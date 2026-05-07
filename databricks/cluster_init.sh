@@ -27,6 +27,8 @@ apt-get install -y --no-install-recommends \
 # Databricks ML Runtime already ships torch, transformers, accelerate, peft.
 # We only add what is missing or needs a newer version.
 pip install --quiet --no-cache-dir \
+    peft \
+    accelerate \
     trl>=0.8.0 \
     sentence-transformers>=2.6.0 \
     faiss-cpu>=1.7.4 \
