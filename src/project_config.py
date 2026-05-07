@@ -83,5 +83,5 @@ else:
 # MLflow experiment (Databricks managed tracking by default)
 # ---------------------------------------------------------------------------
 MLFLOW_EXPERIMENT: str = os.environ.get(
-    "MLFLOW_EXPERIMENT_NAME", "/Shared/llama32-local/lora-finetune"
+    "MLFLOW_EXPERIMENT_NAME", "llama32-lora-finetune"
 )
