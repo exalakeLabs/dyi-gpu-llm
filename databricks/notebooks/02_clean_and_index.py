@@ -157,8 +157,12 @@ import os
 import sys
 import numpy as np
 import faiss
+from pathlib import Path
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
+
+prepared_dir = Path(f"{dbfs_root}/prepared")
+
 
 # Re-inject src/ into sys.path — %pip install restarts the kernel and wipes
 # any sys.path changes made in earlier cells.
