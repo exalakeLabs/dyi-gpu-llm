@@ -7,6 +7,7 @@
 # =============================================================================
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## 03 · Build Training Pairs & Fine-tune LoRA
 # MAGIC
@@ -24,14 +25,16 @@
 # MAGIC **Estimated time**: 2–8 h depending on corpus size and cluster type.
 
 # COMMAND ----------
+
 # MAGIC %pip install --quiet trl>=0.8.0 truststore
 
 # COMMAND ----------
+
 # Widget parameters — edit before running
 dbutils.widgets.text(    "dbfs_root",         "/dbfs/FileStore/llama32",   "DBFS Root")
 dbutils.widgets.text(    "base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
 dbutils.widgets.text(    "num_gpus",          "1",                          "GPUs (TorchDistributor num_processes)")
-dbutils.widgets.dropdown("local_mode",        "true",  ["true", "false"],   "local_mode (false = multi-node)")
+dbutils.widgets.dropdown("local_mode",        "false",  ["true", "false"],   "local_mode (false = multi-node)")
 dbutils.widgets.text(    "num_epochs",        "1",                          "Training Epochs")
 dbutils.widgets.text(    "batch_size",        "2",                          "Per-device Batch Size")
 dbutils.widgets.text(    "grad_accum",        "8",                          "Gradient Accumulation Steps")
@@ -41,6 +44,7 @@ dbutils.widgets.text(    "lora_r",            "16",                         "LoR
 dbutils.widgets.text(    "max_pair_files",    "0",                          "Max files for pair gen (0=all)")
 
 # COMMAND ----------
+
 import os, sys, math
 from pathlib import Path
 
@@ -88,9 +92,11 @@ print(f"Epochs         : {num_epochs}")
 print(f"Effective batch: {batch_size} × {num_gpus} GPU(s) × accum {grad_accum} = {batch_size * num_gpus * grad_accum}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Stage A · Generate training pairs
 
 # COMMAND ----------
+
 import random, json
 
 # Re-inject src/ — %pip install restarts the kernel and wipes sys.path.
@@ -167,9 +173,11 @@ print(f"Train records: {len(train_recs)}  →  {train_file}")
 print(f"Val records  : {len(val_recs)}   →  {val_file}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Stage B · LoRA fine-tuning (TorchDistributor)
 
 # COMMAND ----------
+
 import mlflow
 from project_config import MLFLOW_EXPERIMENT
 
@@ -343,9 +351,11 @@ print(f"\nLoRA adapter saved to : {adapter_dir}")
 print(f"MLflow experiment     : {MLFLOW_EXPERIMENT}")
 
 # COMMAND ----------
+
 # MAGIC %md ### LoRA adapter size
 
 # COMMAND ----------
+
 if adapter_dir.exists():
     adapter_files = list(adapter_dir.iterdir())
     display(spark.createDataFrame(
@@ -356,4 +366,6 @@ else:
     print("Adapter directory not yet present — training may still be running.")
 
 # COMMAND ----------
+
 # MAGIC %md ### ✅ Training complete — proceed to notebook 04.
+
