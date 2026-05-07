@@ -1,11 +1,17 @@
 # Databricks notebook source
-# =============================================================================
-# 01 · Download Gutenberg Corpus → DBFS
-# Downloads Project Gutenberg plain-text books and writes them to DBFS.
-# Can be run on a CPU cluster (no GPU needed).
-# =============================================================================
+# /// script
+# [tool.databricks.environment]
+# environment_version = "4"
+# ///
+# MAGIC %md
+# MAGIC ###### =============================================================================
+# MAGIC ###### 01 · Download Gutenberg Corpus → DBFS
+# MAGIC ###### Downloads Project Gutenberg plain-text books and writes them to DBFS.
+# MAGIC ###### Can be run on a CPU cluster (no GPU needed).
+# MAGIC ###### =============================================================================
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## 01 · Download Gutenberg Corpus
 # MAGIC
@@ -17,15 +23,18 @@
 # MAGIC **Estimated time**: 30–90 min depending on `max_books_per_query`.
 
 # COMMAND ----------
+
 # MAGIC %pip install --quiet requests truststore
 
 # COMMAND ----------
+
 # Widget parameters — edit before running
-dbutils.widgets.text("dbfs_root",           "/dbfs/FileStore/llama32", "DBFS Root")
+dbutils.widgets.text("dbfs_root", "/Volumes/customer_success/exalabs_writeback/llrun", "DBFS Root")
 dbutils.widgets.text("max_books_per_query", "100",                      "Max Books Per Query (scale down for testing)")
 dbutils.widgets.dropdown("profile",         "smart_assistant",          ["smart_assistant", "tech_biz", "bookish"], "Corpus Profile")
 
 # COMMAND ----------
+
 import os, sys
 dbfs_root = dbutils.widgets.get("dbfs_root")
 max_books  = int(dbutils.widgets.get("max_books_per_query"))
@@ -50,10 +59,12 @@ print(f"Max books  : {max_books} per query")
 print(f"Profile    : {profile}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Download function
 
 # COMMAND ----------
-from download_gutenberg import iter_books, pick_text_url, safe_name
+
+from src.download_gutenberg import iter_books, pick_text_url, safe_name
 import requests
 
 def download_corpus(queries, text_dir: Path):
@@ -96,9 +107,11 @@ def download_corpus(queries, text_dir: Path):
     return total_downloaded, total_skipped
 
 # COMMAND ----------
+
 # MAGIC %md ### Corpus profiles
 
 # COMMAND ----------
+
 # Each entry: (query, topic_filter_or_None, max_books)
 PROFILES = {
     "smart_assistant": [
@@ -150,20 +163,42 @@ queries = PROFILES[profile]
 print(f"Running profile '{profile}' — {len(queries)} query groups")
 
 # COMMAND ----------
+
 # MAGIC %md ### Run download
 
 # COMMAND ----------
-downloaded, skipped = download_corpus(queries, text_dir)
+
+import time
+from requests.exceptions import HTTPError
+
+max_retries = 5
+backoff_base = 10  # seconds
+
+for attempt in range(max_retries):
+    try:
+        downloaded, skipped = download_corpus(queries, text_dir)
+        print(downloaded, skipped)
+        break
+    except HTTPError as e:
+        if hasattr(e, 'response') and e.response is not None and e.response.status_code == 503 and attempt < max_retries - 1:
+            wait = backoff_base * (2 ** attempt)
+            print(f"  [retry] 503 Service Unavailable — waiting {wait}s (attempt {attempt + 1}/{max_retries})")
+            time.sleep(wait)
+        else:
+            raise
+
 total_files = len(list(text_dir.glob("*.txt")))
 print(f"\n{'='*50}")
 print(f"Session: {downloaded} downloaded, {skipped} skipped")
 print(f"Total files in text_dir: {total_files}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Preview DBFS file list
 
 # COMMAND ----------
-files = dbutils.fs.ls(f"dbfs:{text_dir.as_posix().replace('/dbfs', '')}")
+
+files = dbutils.fs.ls(text_dir.as_posix())
 display(spark.createDataFrame(
     [(f.name, f"{f.size / 1024:.1f} KB") for f in files[:20]],
     ["filename", "size"]
@@ -171,4 +206,5 @@ display(spark.createDataFrame(
 print(f"Showing 20 of {len(files)} files.")
 
 # COMMAND ----------
+
 # MAGIC %md ### ✅ Corpus downloaded — proceed to notebook 02.

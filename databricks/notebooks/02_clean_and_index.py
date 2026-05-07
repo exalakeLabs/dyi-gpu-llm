@@ -32,7 +32,7 @@ dbutils.library.restartPython()
 # COMMAND ----------
 
 # Widget parameters — edit before running
-dbutils.widgets.text("dbfs_root",     "/Volumes/customer_success/exalabs_writeback/fileupload", "DBFS Root")
+dbutils.widgets.text("dbfs_root",     "/Volumes/customer_success/exalabs_writeback/llrun", "DBFS Root")
 dbutils.widgets.text("embed_model",   "BAAI/bge-base-en-v1.5",   "Embedding Model")
 dbutils.widgets.text("batch_size",    "128",                      "Embed Batch Size")
 dbutils.widgets.text("chunk_size",    "1800",                     "Chunk Size (chars)")
@@ -42,7 +42,7 @@ dbutils.widgets.text("max_files",     "0",                        "Max Files (0 
 # COMMAND ----------
 
 import os, sys
-dbfs_root   = dbutils.widgets.get("dbfs_root")
+dbfs_root   = dbutils.widgets.get("dbfs_root").strip()
 embed_model = dbutils.widgets.get("embed_model")
 batch_size  = int(dbutils.widgets.get("batch_size"))
 chunk_size  = int(dbutils.widgets.get("chunk_size"))
@@ -67,8 +67,8 @@ from pathlib import Path
 text_dir     = Path(f"{dbfs_root}/text")
 prepared_dir = Path(f"{dbfs_root}/prepared")
 rag_dir      = Path(f"{dbfs_root}/rag")
-prepared_dir.mkdir(parents=True, exist_ok=True)
-rag_dir.mkdir(parents=True, exist_ok=True)
+#prepared_dir.mkdir(parents=True, exist_ok=True)
+#rag_dir.mkdir(parents=True, exist_ok=True)
 
 print(f"DBFS root    : {dbfs_root}")
 print(f"Text dir     : {text_dir}")

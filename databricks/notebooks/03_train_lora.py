@@ -32,7 +32,7 @@
 # COMMAND ----------
 
 # Widget parameters — edit before running
-dbutils.widgets.text(    "dbfs_root",         "/Volumes/customer_success/exalabs_writeback/fileupload",   "DBFS Root")
+dbutils.widgets.text(    "dbfs_root",         "/Users/alex.gauthier@sigmacomputing.com/Lora-slow",   "DBFS Root")
 dbutils.widgets.text(    "base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
 dbutils.widgets.text(    "num_gpus",          "8",                          "GPUs (TorchDistributor num_processes)")
 dbutils.widgets.dropdown("local_mode",        "false",  ["true", "false"],   "local_mode (false = multi-node)")
@@ -180,9 +180,12 @@ print(f"Val records  : {len(val_recs)}   →  {val_file}")
 # COMMAND ----------
 
 import mlflow
-from src.project_config import MLFLOW_EXPERIMENT
+
+MLFLOW_EXPERIMENT = "/Users/alex.gauthier@sigmacomputing.com/Lora-slow/Lora-MLFLOW"
+os.makedirs(os.path.dirname(MLFLOW_EXPERIMENT), exist_ok=True)
 
 mlflow.set_experiment(MLFLOW_EXPERIMENT)
+
 
 # All serialisable hyperparams are captured up-front so MLflow records them
 # even if the distributed job crashes partway through training.
