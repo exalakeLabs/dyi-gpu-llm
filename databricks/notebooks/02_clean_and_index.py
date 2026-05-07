@@ -172,7 +172,7 @@ _src       = os.path.join(_repo_root, "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)  # Ensure 'index_builder.py' is in this directory.
 
-from src.index_builder import chunk_text, extract_title_author
+from index_builder import chunk_text, extract_title_author
 
 # Truststore is needed on the driver when downloading the HF model on Mac/corp proxy.
 try:
