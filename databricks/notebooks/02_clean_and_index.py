@@ -6,6 +6,7 @@
 # =============================================================================
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## 02 · Clean Text & Build FAISS Index
 # MAGIC
@@ -21,11 +22,17 @@
 # MAGIC **Estimated time**: 20–60 min depending on corpus size.
 
 # COMMAND ----------
-# MAGIC %pip install --quiet sentence-transformers faiss-cpu truststore
+
+# MAGIC %pip install --quiet sentence-transformers faiss-cpu truststore faiss-cpu sentence-transformers truststore 
 
 # COMMAND ----------
+
+dbutils.library.restartPython() 
+
+# COMMAND ----------
+
 # Widget parameters — edit before running
-dbutils.widgets.text("dbfs_root",     "/dbfs/FileStore/llama32", "DBFS Root")
+dbutils.widgets.text("dbfs_root",     "/Volumes/customer_success/exalabs_writeback/fileupload", "DBFS Root")
 dbutils.widgets.text("embed_model",   "BAAI/bge-base-en-v1.5",   "Embedding Model")
 dbutils.widgets.text("batch_size",    "256",                      "Embed Batch Size")
 dbutils.widgets.text("chunk_size",    "1800",                     "Chunk Size (chars)")
@@ -33,6 +40,7 @@ dbutils.widgets.text("overlap",       "250",                      "Overlap (char
 dbutils.widgets.text("max_files",     "0",                        "Max Files (0 = all)")
 
 # COMMAND ----------
+
 import os, sys
 dbfs_root   = dbutils.widgets.get("dbfs_root")
 embed_model = dbutils.widgets.get("embed_model")
@@ -67,9 +75,11 @@ print(f"Embed model  : {embed_model}")
 print(f"Batch size   : {batch_size}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Stage A · Clean text with Spark
 
 # COMMAND ----------
+
 import re
 
 def clean_text(text: str) -> str:
@@ -133,9 +143,11 @@ total_prepared = len(list(prepared_dir.glob("*.txt")))
 print(f"\nTotal files in prepared_dir: {total_prepared}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Stage B · Embed chunks & build FAISS index
 
 # COMMAND ----------
+
 import json
 import math
 import os
@@ -151,9 +163,9 @@ _nb_path   = dbutils.notebook.entry_point.getDbutils().notebook().getContext().n
 _repo_root = "/Workspace/" + "/".join(_nb_path.lstrip("/").split("/")[1:4])
 _src       = os.path.join(_repo_root, "src")
 if _src not in sys.path:
-    sys.path.insert(0, _src)
+    sys.path.insert(0, _src)  # Ensure 'index_builder.py' is in this directory.
 
-from index_builder import chunk_text, extract_title_author
+from src.index_builder import chunk_text, extract_title_author
 
 # Truststore is needed on the driver when downloading the HF model on Mac/corp proxy.
 try:
@@ -233,9 +245,11 @@ dim        = embeddings.shape[1]
 print(f"\nTotal chunks: {len(all_meta)}, dim: {dim}")
 
 # COMMAND ----------
+
 # MAGIC %md #### Build IndexHNSWFlat and save
 
 # COMMAND ----------
+
 # IndexHNSWFlat: approximate NN graph index.
 # M=32 edges per node — good recall/speed trade-off for this corpus size.
 # No training step required; vectors can be added immediately.
@@ -268,12 +282,15 @@ print(f"Saved chunks     : {rag_dir / 'chunks.jsonl'}")
 print(f"Saved config     : {rag_dir / 'index_config.json'}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Preview index stats
 
 # COMMAND ----------
+
 import json
 cfg = json.loads((rag_dir / "index_config.json").read_text())
 display(spark.createDataFrame([(k, str(v)) for k, v in cfg.items()], ["key", "value"]))
 
 # COMMAND ----------
+
 # MAGIC %md ### ✅ Index built — proceed to notebook 03.

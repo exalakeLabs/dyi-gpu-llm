@@ -1,10 +1,15 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "4"
+# ///
 # =============================================================================
 # 00 · Cluster Setup & Verification
 # Run this first to install dependencies and verify the GPU cluster is ready.
 # =============================================================================
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## 00 · Cluster Setup & Verification
 # MAGIC
@@ -13,6 +18,7 @@
 # MAGIC HuggingFace cache on DBFS are all working correctly.
 
 # COMMAND ----------
+
 # MAGIC %pip install --quiet \
 # MAGIC   trl>=0.8.0 \
 # MAGIC   sentence-transformers>=2.6.0 \
@@ -22,9 +28,15 @@
 # MAGIC   "uvicorn[standard]"
 
 # COMMAND ----------
-dbutils.widgets.text("dbfs_root", "/dbfs/FileStore/llama32", "DBFS Root")
+
+restart_python or dbutils.library.restartPython()
 
 # COMMAND ----------
+
+dbutils.widgets.text("dbfs_root", "/Volumes/customer_success/exalabs_writeback/fileupload", "DBFS Root")
+
+# COMMAND ----------
+
 import os, sys
 dbfs_root = dbutils.widgets.get("dbfs_root")
 os.environ["LLAMA_DBFS_ROOT"] = dbfs_root
@@ -39,9 +51,18 @@ print(f"Repo root : {_repo_root}")
 print(f"src/ path : {_src}")
 
 # COMMAND ----------
+
 # MAGIC %md ### 1 · GPU / CUDA Check
 
 # COMMAND ----------
+
+import sys
+
+# Clear stale typing_extensions cached from runtime startup so the
+# notebook-scoped version (which has 'deprecated') is found instead.
+for _mod in [k for k in sys.modules if k == 'typing_extensions' or k.startswith('typing_extensions.')]:
+    del sys.modules[_mod]
+
 import torch
 
 print(f"PyTorch version  : {torch.__version__}")
@@ -54,9 +75,11 @@ for i in range(torch.cuda.device_count()):
     print(f"  GPU {i}: {props.name}  VRAM={props.total_memory / 1e9:.1f} GB")
 
 # COMMAND ----------
+
 # MAGIC %md ### 2 · DBFS Directory Layout
 
 # COMMAND ----------
+
 from pathlib import Path
 
 dirs = [
@@ -72,9 +95,11 @@ for d in dirs:
     print(f"✔  {d}")
 
 # COMMAND ----------
+
 # MAGIC %md ### 3 · HuggingFace Cache
 
 # COMMAND ----------
+
 hf_cache = f"{dbfs_root}/hf_cache"
 os.environ["HF_HOME"] = hf_cache
 os.environ["TRANSFORMERS_CACHE"] = hf_cache
@@ -88,10 +113,12 @@ print(f"✔  Tokenizer loaded. Vocab size: {tok.vocab_size}")
 print(f"   Cache location: {hf_cache}")
 
 # COMMAND ----------
+
 # MAGIC %md ### 4 · project_config smoke-test
 
 # COMMAND ----------
-import project_config as cfg
+
+import src.project_config as cfg
 print(f"IS_DATABRICKS  : {cfg.IS_DATABRICKS}")
 print(f"BASE_MODEL     : {cfg.BASE_MODEL}")
 print(f"TEXT_DIR       : {cfg.TEXT_DIR}")
@@ -104,4 +131,5 @@ print(f"ADAPTER_DIR    : {cfg.ADAPTER_DIR}")
 print(f"SHARED_OUTPUT  : {cfg.SHARED_OUTPUT_DIR}")
 
 # COMMAND ----------
+
 # MAGIC %md ### ✅ Setup complete — proceed to notebook 01.

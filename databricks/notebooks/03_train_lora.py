@@ -27,13 +27,14 @@
 # COMMAND ----------
 
 # MAGIC %pip install --quiet trl>=0.8.0 truststore
+# MAGIC dbutils.library.restartPython()
 
 # COMMAND ----------
 
 # Widget parameters — edit before running
-dbutils.widgets.text(    "dbfs_root",         "/dbfs/FileStore/llama32",   "DBFS Root")
+dbutils.widgets.text(    "dbfs_root",         "/Volumes/customer_success/exalabs_writeback/fileupload",   "DBFS Root")
 dbutils.widgets.text(    "base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
-dbutils.widgets.text(    "num_gpus",          "1",                          "GPUs (TorchDistributor num_processes)")
+dbutils.widgets.text(    "num_gpus",          "8",                          "GPUs (TorchDistributor num_processes)")
 dbutils.widgets.dropdown("local_mode",        "false",  ["true", "false"],   "local_mode (false = multi-node)")
 dbutils.widgets.text(    "num_epochs",        "1",                          "Training Epochs")
 dbutils.widgets.text(    "batch_size",        "2",                          "Per-device Batch Size")
@@ -106,7 +107,7 @@ _src       = os.path.join(_repo_root, "src")
 if _src not in sys.path:
     sys.path.insert(0, _src)
 
-from make_training_pairs import (
+from src.make_training_pairs import (
     iter_examples, load_and_clean_book, to_record, write_jsonl
 )
 
@@ -179,7 +180,7 @@ print(f"Val records  : {len(val_recs)}   →  {val_file}")
 # COMMAND ----------
 
 import mlflow
-from project_config import MLFLOW_EXPERIMENT
+from src.project_config import MLFLOW_EXPERIMENT
 
 mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
@@ -368,4 +369,3 @@ else:
 # COMMAND ----------
 
 # MAGIC %md ### ✅ Training complete — proceed to notebook 04.
-
