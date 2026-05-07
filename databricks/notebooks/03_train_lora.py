@@ -254,6 +254,9 @@ def _train_worker(
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         tokenizer.padding_side = "right"
+        # trl >= 1.0 removed max_seq_length from SFTConfig; truncation is now
+        # controlled by tokenizer.model_max_length at encode time.
+        tokenizer.model_max_length = max_length
 
         # Use device_map={"": local_rank} (not "auto") to prevent model parallelism
         # from conflicting with DDP across ranks.
@@ -295,9 +298,13 @@ def _train_worker(
         total_steps   = max(1, math.ceil(steps_per_ep * num_epochs))
         warmup_steps  = max(1, int(total_steps * 0.03))
 
-        # average_tokens_across_devices added in trl 0.9.1 — skip on older versions
+        # Version-gated SFTConfig kwargs:
+        #   max_seq_length        — removed in trl 1.0 (use tokenizer.model_max_length)
+        #   average_tokens_across_devices — added in trl 0.9.1
         _trl_ver = _V(_imeta.version("trl"))
         _extra_sft: dict = {}
+        if _trl_ver < _V("1.0.0"):
+            _extra_sft["max_seq_length"] = max_length   # trl 0.x only
         if _trl_ver >= _V("0.9.1"):
             _extra_sft["average_tokens_across_devices"] = True
 
@@ -309,7 +316,6 @@ def _train_worker(
             learning_rate=learning_rate,
             lr_scheduler_type="cosine",
             warmup_steps=warmup_steps,
-            max_seq_length=max_length,
             packing=False,
             logging_steps=1,
             logging_first_step=True,
