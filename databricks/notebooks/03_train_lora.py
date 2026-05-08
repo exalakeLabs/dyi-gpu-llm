@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # =============================================================================
 # 03 · Build Training Pairs & Fine-tune LoRA
 # Generates continuation-style training pairs from the prepared corpus, then
@@ -405,7 +409,9 @@ print(f"MLflow experiment     : {MLFLOW_EXPERIMENT}")
 
 # COMMAND ----------
 
+from pathlib import Pathadapter_dir = Path('/path/to/adapter_dir')
 if adapter_dir.exists():
+
     adapter_files = list(adapter_dir.iterdir())
     display(spark.createDataFrame(
         [(f.name, f"{f.stat().st_size / 1024:.1f} KB") for f in adapter_files],
