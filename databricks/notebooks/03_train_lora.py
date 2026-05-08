@@ -1,7 +1,7 @@
 # Databricks notebook source
 # /// script
 # [tool.databricks.environment]
-# environment_version = "5"
+# environment_version = "4"
 # ///
 # =============================================================================
 # 03 · Build Training Pairs & Fine-tune LoRA
@@ -37,7 +37,7 @@
 # Widget parameters — edit before running
 dbutils.widgets.text(    "dbfs_root",         "/Volumes/customer_success/exalabs_writeback/llrun",   "DBFS Root")
 dbutils.widgets.text(    "base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
-dbutils.widgets.text(    "num_gpus",          "8",                          "GPUs (TorchDistributor num_processes)")
+dbutils.widgets.text(    "num_gpus",          "4",                          "GPUs (TorchDistributor num_processes)")
 dbutils.widgets.dropdown("local_mode",        "false",  ["true", "false"],   "local_mode (false = multi-node)")
 dbutils.widgets.text(    "num_epochs",        "1",                          "Training Epochs")
 dbutils.widgets.text(    "batch_size",        "2",                          "Per-device Batch Size")
@@ -55,7 +55,7 @@ from pathlib import Path
 dbfs_root     = dbutils.widgets.get("dbfs_root")
 base_model    = dbutils.widgets.get("base_model")
 num_gpus      = int(dbutils.widgets.get("num_gpus"))
-local_mode    = dbutils.widgets.get("local_mode").lower() == "true"
+local_mode    = dbutils.widgets.get("local_mode").lower() == "false"
 num_epochs    = float(dbutils.widgets.get("num_epochs"))
 batch_size    = int(dbutils.widgets.get("batch_size"))
 grad_accum    = int(dbutils.widgets.get("grad_accum"))
@@ -223,7 +223,14 @@ def _train_worker(
     max_length: int,
     lora_r: int,
 ) -> None:
-    import math, os, traceback as _tb
+    import os
+    # Redirect HF cache to local SSD — DBFS FUSE (/dbfs/) does not support
+    # copy_file_range/sendfile syscalls required by the HF XET downloader.
+    os.environ["HF_HOME"] = "/local_disk0/hf_cache"
+    os.environ["TRANSFORMERS_CACHE"] = "/local_disk0/hf_cache"
+    os.environ["HF_HUB_DISABLE_XET"] = "1"
+
+    import math, traceback as _tb
     # Disable Databricks MLflow autologging inside workers — autolog tries to
     # attach to the driver-side run across process boundaries and causes NCCL
     # barrier failures when the driver run is still open.
@@ -374,6 +381,17 @@ with mlflow.start_run() as _setup_run:
     _run_id = _setup_run.info.run_id
     print(f"MLflow run: {_run_id}")
 # ← run is now CLOSED; MLFLOW_RUN_ID cleared from environment
+
+# Ensure GPU resource config is set (required on single-node clusters where
+# spark.task.resource.gpu.amount is not auto-configured).
+spark.conf.set("spark.task.resource.gpu.amount", "1")
+
+# On single-node clusters (no workers), force local_mode=True since Spark
+# barrier execution requires dedicated worker executors to schedule GPU tasks.
+_num_workers = int(spark.conf.get("spark.databricks.clusterUsageTags.clusterWorkers", "0"))
+if _num_workers == 0 and not local_mode:
+    print(f"Single-node cluster detected (0 workers) — using local_mode=True")
+    local_mode = True
 
 distributor = TorchDistributor(
     num_processes=num_gpus,

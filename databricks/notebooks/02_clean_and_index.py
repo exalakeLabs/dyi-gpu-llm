@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "4"
+# ///
 # =============================================================================
 # 02 · Clean Text & Build FAISS Index → DBFS
 # Cleans the raw Gutenberg corpus, then embeds chunks and builds the RAG index.
@@ -102,9 +106,9 @@ if max_files > 0:
 print(f"Files to clean: {len(txt_files)}")
 
 # Distribute cleaning across Spark workers (map over DBFS paths).
-files_rdd = spark.sparkContext.parallelize(
-    [str(p) for p in txt_files], numSlices=min(len(txt_files), 200)
-)
+#files_rdd = spark.parallelize(
+#    [str(p) for p in txt_files], numSlices=min(len(txt_files), 200)
+#)
 
 def clean_file(path_str: str):
     import re
@@ -120,6 +124,7 @@ def clean_file(path_str: str):
 
     p = Path(path_str)
     out = Path(path_str.replace("/text/", "/prepared/"))
+    out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         return ("skipped", p.name)
     try:
@@ -130,7 +135,7 @@ def clean_file(path_str: str):
     except Exception as e:
         return ("error", f"{p.name}: {e}")
 
-results = files_rdd.map(clean_file).collect()
+results = [clean_file(str(p)) for p in txt_files]
 
 ok      = sum(1 for s, _ in results if s == "ok")
 skipped = sum(1 for s, _ in results if s == "skipped")

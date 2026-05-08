@@ -7,6 +7,7 @@
 # =============================================================================
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## 04 · RAG Chat
 # MAGIC
@@ -20,11 +21,13 @@
 # MAGIC **Cluster**: GPU recommended for fast generation.
 
 # COMMAND ----------
+
 # MAGIC %pip install --quiet sentence-transformers faiss-cpu truststore
 
 # COMMAND ----------
+
 # Widget parameters
-dbutils.widgets.text(    "dbfs_root",    "/dbfs/FileStore/llama32",   "DBFS Root")
+dbutils.widgets.text(    "dbfs_root",    "/Volumes/customer_success/exalabs_writeback/llrun/",   "DBFS Root")
 dbutils.widgets.text(    "embed_model",  "BAAI/bge-base-en-v1.5",     "Embedding Model")
 dbutils.widgets.text(    "rerank_model", "cross-encoder/ms-marco-MiniLM-L-6-v2", "Rerank Model")
 dbutils.widgets.text(    "top_k_faiss",  "24",                         "FAISS retrieve k")
@@ -34,6 +37,7 @@ dbutils.widgets.dropdown("use_adapter",  "auto", ["auto", "yes", "no"], "Use LoR
 dbutils.widgets.text(    "query",        "What is the nature of light?", "Query")
 
 # COMMAND ----------
+
 import os, sys
 from pathlib import Path
 
@@ -68,9 +72,11 @@ print(f"Embed model  : {embed_model}")
 print(f"Rerank model : {rerank_model}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Load FAISS index and chunks
 
 # COMMAND ----------
+
 import json
 import faiss
 import numpy as np
@@ -100,23 +106,47 @@ print(f"FAISS index  : {index.ntotal:,} vectors")
 print(f"Chunks loaded: {len(chunks):,}")
 
 # COMMAND ----------
+
 # MAGIC %md ### Load embedding model
 
 # COMMAND ----------
+
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
 print(f"Loading embedder: {embed_model} …")
-embedder = SentenceTransformer(embed_model)
+embedder = SentenceTransformer(embed_model, model_kwargs={"use_safetensors": True})
 
 print(f"Loading reranker: {rerank_model} …")
-reranker = CrossEncoder(rerank_model)
+reranker = CrossEncoder(rerank_model, model_kwargs={"use_safetensors": True})
 
 print("Models ready.")
 
 # COMMAND ----------
+
 # MAGIC %md ### Load generation model
 
 # COMMAND ----------
+
+import os, sys
+
+# Redirect HF cache to local SSD — DBFS FUSE does not support syscalls used
+# by the HF XET downloader (copy_file_range, sendfile).
+os.environ["HF_HOME"] = "/local_disk0/hf_cache"
+os.environ["TRANSFORMERS_CACHE"] = "/local_disk0/hf_cache"
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+_LOCAL_CACHE = "/local_disk0/hf_cache/hub"
+
+import huggingface_hub.constants
+huggingface_hub.constants.HF_HUB_CACHE = _LOCAL_CACHE
+
+# Fix src/ path — upstream cells use [1:4] which skips 'Users' and goes one
+# level too deep.  Correct slice is [0:3] → Users/<user>/<repo>.
+_nb_path   = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+_repo_root = "/Workspace/" + "/".join(_nb_path.lstrip("/").split("/")[0:3])
+_src       = os.path.join(_repo_root, "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from peft import PeftModel
@@ -128,7 +158,7 @@ _should_use_adapter = (
 )
 
 print(f"Loading base model: {BASE_MODEL} …")
-tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, use_fast=True)
+tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, use_fast=True, cache_dir=_LOCAL_CACHE)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -138,6 +168,7 @@ model = AutoModelForCausalLM.from_pretrained(
     dtype=dtype,
     device_map="auto",
     attn_implementation="sdpa",
+    cache_dir=_LOCAL_CACHE,
 )
 
 if _should_use_adapter:
@@ -152,9 +183,11 @@ model.eval()
 print("Generation model ready.")
 
 # COMMAND ----------
+
 # MAGIC %md ### RAG helper functions
 
 # COMMAND ----------
+
 def retrieve(query: str, k: int) -> list:
     """FAISS approximate nearest-neighbour retrieval."""
     q_emb = embedder.encode(
@@ -230,9 +263,11 @@ def generate(query: str, context_hits: list) -> str:
 print("RAG functions defined.")
 
 # COMMAND ----------
+
 # MAGIC %md ### Query
 
 # COMMAND ----------
+
 query = dbutils.widgets.get("query")
 
 print(f"Query: {query!r}\n")
@@ -256,9 +291,11 @@ print(f"ANSWER:\n{answer}")
 print('='*60)
 
 # COMMAND ----------
+
 # MAGIC %md ### Display retrieved passages
 
 # COMMAND ----------
+
 rows = [
     (
         i + 1,
@@ -272,6 +309,7 @@ rows = [
 display(spark.createDataFrame(rows, ["rank", "title", "author", "rerank_score", "excerpt"]))
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### ✅ RAG pipeline complete.
 # MAGIC
