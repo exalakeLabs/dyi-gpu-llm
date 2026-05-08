@@ -34,35 +34,14 @@
 
 # COMMAND ----------
 
-# Widget parameters — edit before running
-dbutils.widgets.text(    "dbfs_root",         "/Volumes/customer_success/exalabs_writeback/llrun",   "DBFS Root")
-dbutils.widgets.text(    "base_model",        "Qwen/Qwen2.5-3B-Instruct",  "Base Model")
-dbutils.widgets.text(    "num_gpus",          "4",                          "GPUs (TorchDistributor num_processes)")
-dbutils.widgets.dropdown("local_mode",        "false",  ["true", "false"],   "local_mode (false = multi-node)")
-dbutils.widgets.text(    "num_epochs",        "1",                          "Training Epochs")
-dbutils.widgets.text(    "batch_size",        "2",                          "Per-device Batch Size")
-dbutils.widgets.text(    "grad_accum",        "8",                          "Gradient Accumulation Steps")
-dbutils.widgets.text(    "learning_rate",     "3e-4",                       "Learning Rate")
-dbutils.widgets.text(    "max_length",        "512",                        "Max Sequence Length")
-dbutils.widgets.text(    "lora_r",            "16",                         "LoRA rank (r)")
-dbutils.widgets.text(    "max_pair_files",    "0",                          "Max files for pair gen (0=all)")
+# MAGIC %run ./nb_config
 
 # COMMAND ----------
 
 import os, sys, math
 from pathlib import Path
 
-dbfs_root     = dbutils.widgets.get("dbfs_root")
-base_model    = dbutils.widgets.get("base_model")
-num_gpus      = int(dbutils.widgets.get("num_gpus"))
-local_mode    = dbutils.widgets.get("local_mode").lower() == "false"
-num_epochs    = float(dbutils.widgets.get("num_epochs"))
-batch_size    = int(dbutils.widgets.get("batch_size"))
-grad_accum    = int(dbutils.widgets.get("grad_accum"))
-learning_rate = float(dbutils.widgets.get("learning_rate"))
-max_length    = int(dbutils.widgets.get("max_length"))
-lora_r        = int(dbutils.widgets.get("lora_r"))
-max_pair_files = int(dbutils.widgets.get("max_pair_files"))
+batch_size = train_batch_size
 
 os.environ["LLAMA_DBFS_ROOT"]     = dbfs_root
 os.environ["LLAMA_PREPARED_DIR"]  = f"{dbfs_root}/prepared"

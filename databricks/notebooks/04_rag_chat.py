@@ -15,8 +15,8 @@
 # MAGIC cross-encoder, then generates an answer with `Qwen2.5-3B-Instruct`
 # MAGIC (base model or LoRA-adapted).
 # MAGIC
-# MAGIC **Usage**: run cells top to bottom, then re-run the **Query** cell with
-# MAGIC different values in the `query` widget.
+# MAGIC **Usage**: edit `query` (and other parameters) in `nb_config.py`, then
+# MAGIC run cells top to bottom.  Re-run only the **Query** cell to test a new query.
 # MAGIC
 # MAGIC **Cluster**: GPU recommended for fast generation.
 
@@ -26,28 +26,12 @@
 
 # COMMAND ----------
 
-# Widget parameters
-dbutils.widgets.text(    "dbfs_root",    "/Volumes/customer_success/exalabs_writeback/llrun/",   "DBFS Root")
-dbutils.widgets.text(    "embed_model",  "BAAI/bge-base-en-v1.5",     "Embedding Model")
-dbutils.widgets.text(    "rerank_model", "cross-encoder/ms-marco-MiniLM-L-6-v2", "Rerank Model")
-dbutils.widgets.text(    "top_k_faiss",  "24",                         "FAISS retrieve k")
-dbutils.widgets.text(    "top_k_rerank", "6",                          "Rerank keep top-n")
-dbutils.widgets.text(    "max_new_tok",  "300",                        "Max new tokens")
-dbutils.widgets.dropdown("use_adapter",  "auto", ["auto", "yes", "no"], "Use LoRA adapter")
-dbutils.widgets.text(    "query",        "What is the nature of light?", "Query")
+# MAGIC %run ./nb_config
 
 # COMMAND ----------
 
 import os, sys
 from pathlib import Path
-
-dbfs_root    = dbutils.widgets.get("dbfs_root")
-embed_model  = dbutils.widgets.get("embed_model")
-rerank_model = dbutils.widgets.get("rerank_model")
-top_k_faiss  = int(dbutils.widgets.get("top_k_faiss"))
-top_k_rerank = int(dbutils.widgets.get("top_k_rerank"))
-max_new_tok  = int(dbutils.widgets.get("max_new_tok"))
-use_adapter  = dbutils.widgets.get("use_adapter")
 
 os.environ["LLAMA_DBFS_ROOT"] = dbfs_root
 
@@ -268,8 +252,6 @@ print("RAG functions defined.")
 
 # COMMAND ----------
 
-query = dbutils.widgets.get("query")
-
 print(f"Query: {query!r}\n")
 
 # Step 1 — retrieve
@@ -313,6 +295,6 @@ display(spark.createDataFrame(rows, ["rank", "title", "author", "rerank_score", 
 # MAGIC %md
 # MAGIC ### ✅ RAG pipeline complete.
 # MAGIC
-# MAGIC - Change the **Query** widget and re-run the **Query** cell to ask different questions.
-# MAGIC - Adjust `top_k_faiss` / `top_k_rerank` widgets to trade recall vs. latency.
-# MAGIC - Set `use_adapter` to `yes` to use the fine-tuned LoRA adapter from notebook 03.
+# MAGIC - Edit `query` in `nb_config.py` and re-run the **Query** cell to ask different questions.
+# MAGIC - Adjust `top_k_faiss` / `top_k_rerank` in `nb_config.py` to trade recall vs. latency.
+# MAGIC - Set `use_adapter = "yes"` in `nb_config.py` to use the fine-tuned LoRA adapter from notebook 03.

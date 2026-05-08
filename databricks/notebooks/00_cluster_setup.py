@@ -33,12 +33,11 @@ restart_python or dbutils.library.restartPython()
 
 # COMMAND ----------
 
-dbutils.widgets.text("dbfs_root", "/Volumes/customer_success/exalabs_writeback/llrun", "DBFS Root")
+# MAGIC %run ./nb_config
 
 # COMMAND ----------
 
 import os, sys
-dbfs_root = dbutils.widgets.get("dbfs_root")
 os.environ["LLAMA_DBFS_ROOT"] = dbfs_root
 
 # Add src/ to path (works whether the repo is in Repos or /Workspace)

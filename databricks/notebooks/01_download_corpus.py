@@ -28,18 +28,11 @@
 
 # COMMAND ----------
 
-# Widget parameters — edit before running
-dbutils.widgets.text("dbfs_root", "/Volumes/customer_success/exalabs_writeback/llrun", "DBFS Root")
-dbutils.widgets.text("max_books_per_query", "100",                      "Max Books Per Query (scale down for testing)")
-dbutils.widgets.dropdown("profile",         "smart_assistant",          ["smart_assistant", "tech_biz", "bookish"], "Corpus Profile")
+# MAGIC %run ./nb_config
 
 # COMMAND ----------
 
 import os, sys
-dbfs_root = dbutils.widgets.get("dbfs_root")
-max_books  = int(dbutils.widgets.get("max_books_per_query"))
-profile    = dbutils.widgets.get("profile")
-
 os.environ["LLAMA_DBFS_ROOT"] = dbfs_root
 os.environ["LLAMA_TEXT_DIR"]  = f"{dbfs_root}/text"
 

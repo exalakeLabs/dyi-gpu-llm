@@ -35,23 +35,12 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
-# Widget parameters — edit before running
-dbutils.widgets.text("dbfs_root",     "/Volumes/customer_success/exalabs_writeback/llrun", "DBFS Root")
-dbutils.widgets.text("embed_model",   "BAAI/bge-base-en-v1.5",   "Embedding Model")
-dbutils.widgets.text("batch_size",    "128",                      "Embed Batch Size")
-dbutils.widgets.text("chunk_size",    "1800",                     "Chunk Size (chars)")
-dbutils.widgets.text("overlap",       "250",                      "Overlap (chars)")
-dbutils.widgets.text("max_files",     "0",                        "Max Files (0 = all)")
+# MAGIC %run ./nb_config
 
 # COMMAND ----------
 
 import os, sys
-dbfs_root   = dbutils.widgets.get("dbfs_root").strip()
-embed_model = dbutils.widgets.get("embed_model")
-batch_size  = int(dbutils.widgets.get("batch_size"))
-chunk_size  = int(dbutils.widgets.get("chunk_size"))
-overlap     = int(dbutils.widgets.get("overlap"))
-max_files   = int(dbutils.widgets.get("max_files"))
+batch_size = embed_batch_size
 
 os.environ["LLAMA_DBFS_ROOT"]    = dbfs_root
 os.environ["LLAMA_TEXT_DIR"]     = f"{dbfs_root}/text"
