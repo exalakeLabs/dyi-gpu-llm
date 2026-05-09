@@ -29,7 +29,7 @@
 
 # COMMAND ----------
 
-restart_python or dbutils.library.restartPython()
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
