@@ -160,6 +160,15 @@ def main():
     index_dir = Path(args.index_dir).expanduser().resolve()
     chunks_path = index_dir / "chunks.jsonl"
     index_path = index_dir / "index.faiss"
+    config_path = index_dir / "index_config.json"
+
+    # If --embed-model was not explicitly supplied, use the model recorded at
+    # index-build time so the query dimension always matches the index dimension.
+    if args.embed_model == DEFAULT_EMBED_MODEL and config_path.exists():
+        saved_model = json.loads(config_path.read_text())["embed_model"]
+        if saved_model != args.embed_model:
+            print(f"Note: using embed model from index config: {saved_model}")
+            args.embed_model = saved_model
 
     print("Loading FAISS index...")
     index = faiss.read_index(str(index_path))
