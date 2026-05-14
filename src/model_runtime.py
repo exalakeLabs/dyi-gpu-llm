@@ -1,8 +1,16 @@
+import pathlib
+
 import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import __version__ as _tf_version
 
 from project_config import ADAPTER_DIR, BASE_MODEL
+
+# transformers ≥ 4.51 renamed the from_pretrained dtype kwarg from
+# `torch_dtype` to `dtype`; older builds silently ignore `dtype`.
+_tf_ver = tuple(int(x) for x in _tf_version.split(".")[:2])
+_DTYPE_KWARG = "dtype" if _tf_ver >= (4, 51) else "torch_dtype"
 
 
 def is_rocm() -> bool:
@@ -77,7 +85,7 @@ def load_base_model(**kwargs):
     # device_map={"": 0} targets device 0 (works for ROCm/HIP and CUDA alike).
     # Omitted on CPU-only builds: transformers raises when no accelerator is present.
     model_kwargs: dict = {
-        "torch_dtype": _model_dtype(),
+        _DTYPE_KWARG: _model_dtype(),
         "trust_remote_code": True,
         "low_cpu_mem_usage": True,
     }
@@ -87,12 +95,18 @@ def load_base_model(**kwargs):
     return AutoModelForCausalLM.from_pretrained(BASE_MODEL, **model_kwargs)
 
 
-def load_generation_model(adapter_path=ADAPTER_DIR, use_adapter=True):
+def load_generation_model(adapter_path=ADAPTER_DIR, use_adapter=True, **model_kwargs):
     patch_rocm_isin()
     tokenizer = load_tokenizer()
-    model = load_base_model()
+    model = load_base_model(**model_kwargs)
 
     if use_adapter:
+        adapter_path = pathlib.Path(adapter_path)
+        if not (adapter_path / "adapter_config.json").exists():
+            raise FileNotFoundError(
+                f"No adapter_config.json found at '{adapter_path}'. "
+                "Run training first, or pass use_adapter=False / --no-adapter to load the base model only."
+            )
         model = PeftModel.from_pretrained(
             model,
             str(adapter_path),
