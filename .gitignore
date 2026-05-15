@@ -6,4 +6,4 @@ text/
 /data
 *.jsonl
 prepared/
-/__pycache__/
+__pycache__/
