@@ -119,6 +119,7 @@ def attach_lora(model):
         bias="none",
         task_type=TaskType.CAUSAL_LM,
         target_modules=target_modules,
+        base_model_name_or_path=MODEL_NAME,
     )
 
     model = get_peft_model(model, peft_config)
