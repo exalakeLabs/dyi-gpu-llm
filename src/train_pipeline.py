@@ -13,7 +13,6 @@ ROOT = Path(__file__).resolve().parent
 MAKE_PAIRS = ROOT / "make_training_pairs.py"
 TRAIN_GPU = ROOT / "train_lora_gpu.py"
 TRAIN_CPU = ROOT / "train_lora_cpu.py"
-CLEAN_TEXT = ROOT / "clean_text.py"
 
 
 def run_step(cmd: list[str], env: dict[str, str] | None = None) -> int:
@@ -59,7 +58,6 @@ def main() -> int:
     ensure_exists(MAKE_PAIRS)
     ensure_exists(TRAIN_GPU)
     ensure_exists(TRAIN_CPU)
-    ensure_exists(CLEAN_TEXT)
 
     env = os.environ.copy()
 
@@ -69,11 +67,6 @@ def main() -> int:
     rc = run_step([py, str(MAKE_PAIRS)], env=env)
     if rc != 0:
         print(f"[ERROR] make_training_pairs.py failed with exit code {rc}")
-        return rc
-
-    rc = run_step([py, str(CLEAN_TEXT)], env=env)
-    if rc != 0:
-        print(f"[ERROR] clean_text.py failed with exit code {rc}")
         return rc
 
     if cuda_available(py):
