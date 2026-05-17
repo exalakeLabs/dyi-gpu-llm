@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-MAKE_PAIRS = ROOT / "make_training_pairs.py"
+#MAKE_PAIRS = ROOT / "make_training_pairs.py"
 TRAIN_GPU = ROOT / "train_lora_gpu.py"
 TRAIN_CPU = ROOT / "train_lora_cpu.py"
 
@@ -55,7 +55,7 @@ def ensure_exists(path: Path) -> None:
 def main() -> int:
     py = python_executable()
 
-    ensure_exists(MAKE_PAIRS)
+    #ensure_exists(MAKE_PAIRS)
     ensure_exists(TRAIN_GPU)
     ensure_exists(TRAIN_CPU)
 
@@ -64,10 +64,10 @@ def main() -> int:
     print("Project root:", ROOT)
     print("Python:", py)
 
-    rc = run_step([py, str(MAKE_PAIRS)], env=env)
-    if rc != 0:
-        print(f"[ERROR] make_training_pairs.py failed with exit code {rc}")
-        return rc
+    #rc = run_step([py, str(MAKE_PAIRS)], env=env)
+    #if rc != 0:
+    #    print(f"[ERROR] make_training_pairs.py failed with exit code {rc}")
+    #    return rc
 
     if cuda_available(py):
         print("[INFO] CUDA detected. Using GPU trainer.")
