@@ -253,7 +253,6 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
         remove_unused_columns=False,
         dataloader_pin_memory=True,
         dataloader_num_workers=DATALOADER_NUM_WORKERS,
-        group_by_length=True,
         disable_tqdm=True,
     )
 
