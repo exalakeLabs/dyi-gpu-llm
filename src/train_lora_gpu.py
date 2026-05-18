@@ -248,18 +248,25 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
         disable_tqdm=True,
     )
 
-    # Some transformers versions support this; older ones may not.
-    try:
-        return TrainingArguments(
-            include_num_input_tokens_seen=True,
-            **kwargs,
-        )
-    except TypeError:
-        print(
-            "Warning: this transformers version does not support "
-            "include_num_input_tokens_seen=True; continuing without it."
-        )
-        return TrainingArguments(**kwargs)
+    # Strip kwargs unsupported by older transformers versions, then build args.
+    optional_kwargs = ["include_num_input_tokens_seen", "group_by_length"]
+    extra = {k: True for k in optional_kwargs[:1]}  # include_num_input_tokens_seen=True
+    extra["group_by_length"] = True
+
+    while True:
+        try:
+            return TrainingArguments(**kwargs, **extra)
+        except TypeError as exc:
+            # Pull the unknown kwarg name out of the error message and drop it.
+            bad = str(exc).split("'")[1] if "'" in str(exc) else None
+            if bad and bad in extra:
+                print(f"Warning: transformers does not support {bad!r}; skipping.")
+                del extra[bad]
+            elif bad and bad in kwargs:
+                print(f"Warning: transformers does not support {bad!r}; skipping.")
+                del kwargs[bad]
+            else:
+                raise
 
 
 def main() -> int:
