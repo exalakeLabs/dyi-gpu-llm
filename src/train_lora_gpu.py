@@ -22,11 +22,11 @@ from transformers.trainer_utils import get_last_checkpoint
 transformers.logging.set_verbosity_info()
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
-TRAIN_FILE = os.environ.get("TRAIN_FILE", "/home/alex2/llrun/data/train.jsonl")
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/home/alex2/llrun/output/lora")
+TRAIN_FILE = os.environ.get("TRAIN_FILE", "/home/ubuntu/llrun/data/train.jsonl")
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/home/ubuntu/llrun/output/lora")
 MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "512"))
 
-PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "1"))
+PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "16"))
 GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "16"))
 NUM_TRAIN_EPOCHS = float(os.environ.get("NUM_TRAIN_EPOCHS", "1"))
 LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "2e-4"))
