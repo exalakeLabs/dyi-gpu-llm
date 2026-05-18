@@ -20,11 +20,12 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
+from model_runtime import is_rocm, patch_rocm_isin
+
 transformers.logging.set_verbosity_info()
 
-# A100 supports TF32 for matmul/conv — ensure it's active regardless of torch defaults.
-torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.allow_tf32 = True
+# "cuda" | "rocm" — set by configure_gpu_backend() in main()
+GPU_BACKEND: str = "none"
 
 MODEL_ROOT = os.environ.get("MODEL_ROOT")
 if MODEL_ROOT is None:
@@ -57,8 +58,55 @@ WARMUP_RATIO = float(os.environ.get("WARMUP_RATIO", "0.03"))
 DATALOADER_NUM_WORKERS = int(os.environ.get("DATALOADER_NUM_WORKERS", "4"))
 
 
-def print_cuda_debug() -> None:
+def _rocm_supports_bf16() -> bool:
+    """Native bf16 on CDNA2/CDNA3 and RDNA3 (mirrors model_runtime)."""
+    if not is_rocm():
+        return False
+    try:
+        arch = getattr(torch.cuda.get_device_properties(0), "gcnArchName", "")
+        return any(
+            arch.startswith(p)
+            for p in ("gfx90a", "gfx940", "gfx941", "gfx942", "gfx1100", "gfx1101", "gfx1102")
+        )
+    except Exception:
+        return False
+
+
+def detect_gpu_backend() -> str:
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "No GPU accelerator available. Install PyTorch with CUDA or ROCm and ensure a GPU is visible."
+        )
+    return "rocm" if is_rocm() else "cuda"
+
+
+def configure_gpu_backend() -> str:
+    """Apply backend-specific torch settings. Returns 'cuda' or 'rocm'."""
+    global GPU_BACKEND
+    GPU_BACKEND = detect_gpu_backend()
+    if GPU_BACKEND == "cuda":
+        # A100+ — TF32 speeds matmul/conv on NVIDIA when enabled.
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    else:
+        patch_rocm_isin()
+    return GPU_BACKEND
+
+
+def gpu_bf16_supported() -> bool:
+    if GPU_BACKEND == "rocm":
+        return _rocm_supports_bf16()
+    return torch.cuda.is_bf16_supported()
+
+
+def training_optimizer() -> str:
+    # Fused AdamW is well-tested on CUDA; standard AdamW is safer on ROCm builds.
+    return "adamw_torch" if GPU_BACKEND == "rocm" else "adamw_torch_fused"
+
+
+def print_gpu_debug() -> None:
     print(f"torch: {torch.__version__}")
+    print(f"GPU backend: {GPU_BACKEND}")
     print(f"torch.version.cuda: {torch.version.cuda}")
     print(f"torch.version.hip: {torch.version.hip}")
     print(f"torch.cuda.is_available(): {torch.cuda.is_available()}")
@@ -70,9 +118,7 @@ def print_cuda_debug() -> None:
 
 
 def pick_dtype() -> torch.dtype:
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA is not available. This script is for NVIDIA GPU training.")
-    if torch.cuda.is_bf16_supported():
+    if gpu_bf16_supported():
         return torch.bfloat16
     return torch.float16
 
@@ -92,24 +138,30 @@ def load_tokenizer(model_name: str):
 
 def load_model(model_name: str, tokenizer):
     dtype = pick_dtype()
+    common = dict(pretrained_model_name_or_path=model_name, dtype=dtype, device_map="auto")
 
-    # Flash Attention 2 is natively supported on A100 and reduces both memory
-    # and latency for attention. Fall back silently if flash-attn isn't installed.
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            dtype=dtype,
-            device_map="auto",
-            attn_implementation="flash_attention_2",
-        )
-        print("Flash Attention 2 enabled.")
-    except (ValueError, ImportError):
-        print("Flash Attention 2 not available; falling back to eager attention.")
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            dtype=dtype,
-            device_map="auto",
-        )
+    if GPU_BACKEND == "cuda":
+        # Flash Attention 2 on Ampere+ reduces memory and latency when installed.
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                **common,
+                attn_implementation="flash_attention_2",
+            )
+            print("Flash Attention 2 enabled.")
+        except (ValueError, ImportError):
+            print("Flash Attention 2 not available; falling back to default attention.")
+            model = AutoModelForCausalLM.from_pretrained(**common)
+    else:
+        # ROCm: prefer SDPA (well supported); fall back to default attention.
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                **common,
+                attn_implementation="sdpa",
+            )
+            print("SDPA attention enabled.")
+        except (ValueError, ImportError):
+            print("SDPA not available; falling back to default attention.")
+            model = AutoModelForCausalLM.from_pretrained(**common)
 
     if len(tokenizer) > model.get_input_embeddings().num_embeddings:
         model.resize_token_embeddings(len(tokenizer))
@@ -119,15 +171,18 @@ def load_model(model_name: str, tokenizer):
 
     first_param = next(model.parameters())
     print(f"Model first param device: {first_param.device}")
-    print("Backend: CUDA")
-    print(f"CUDA version: {torch.version.cuda}")
+    print(f"Backend: {GPU_BACKEND.upper()}")
+    if torch.version.cuda:
+        print(f"CUDA version: {torch.version.cuda}")
+    if torch.version.hip:
+        print(f"HIP version: {torch.version.hip}")
     print(f"GPU available: {torch.cuda.is_available()}")
     print(f"GPU count: {torch.cuda.device_count()}")
 
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"CUDA memory allocated: {torch.cuda.memory_allocated(0) / (1024**2):.2f} MB")
-        print(f"CUDA memory reserved: {torch.cuda.memory_reserved(0) / (1024**2):.2f} MB")
+        print(f"GPU memory allocated: {torch.cuda.memory_allocated(0) / (1024**2):.2f} MB")
+        print(f"GPU memory reserved: {torch.cuda.memory_reserved(0) / (1024**2):.2f} MB")
 
     return model
 
@@ -236,7 +291,7 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
         learning_rate=LEARNING_RATE,
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
-        optim="adamw_torch_fused",
+        optim=training_optimizer(),
         bf16=use_bf16,
         fp16=use_fp16,
         gradient_checkpointing=GRADIENT_CHECKPOINTING,
@@ -272,7 +327,8 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
 
 
 def main() -> int:
-    print_cuda_debug()
+    configure_gpu_backend()
+    print_gpu_debug()
 
     train_path = Path(TRAIN_FILE)
     if not train_path.exists():
@@ -296,7 +352,7 @@ def main() -> int:
 
     print(f"Starting training on: {torch.cuda.get_device_name(0)}")
 
-    use_bf16 = torch.cuda.is_bf16_supported()
+    use_bf16 = gpu_bf16_supported()
     use_fp16 = not use_bf16
     warmup_steps = estimate_warmup_steps(len(tokenized_dataset))
 
