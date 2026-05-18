@@ -40,6 +40,11 @@ PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", 
 GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "4"))
 NUM_TRAIN_EPOCHS = float(os.environ.get("NUM_TRAIN_EPOCHS", "1"))
 LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "2e-4"))
+GRADIENT_CHECKPOINTING = os.environ.get("GRADIENT_CHECKPOINTING", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 # LoRA rank — bumped to 16 (alpha=32) to make better use of available VRAM.
 LORA_RANK = int(os.environ.get("LORA_RANK", "16"))
