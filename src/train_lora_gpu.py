@@ -31,12 +31,10 @@ TRAIN_FILE = os.environ.get("TRAIN_FILE", "/home/ubuntu/llrun/data/train.jsonl")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/home/ubuntu/llrun/output/lora")
 MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "512"))
 
-# A100-40GB: Mistral-7B uses ~14 GB bf16, leaving ~26 GB free. With gradient
-# checkpointing disabled we can run batch=16/accum=2 (effective batch 32) and
-# avoid the recomputation overhead that checkpointing adds on each backward pass.
-PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "16"))
-GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "2"))
-GRADIENT_CHECKPOINTING = os.environ.get("GRADIENT_CHECKPOINTING", "0") == "1"
+# A100-40GB has ample VRAM for Mistral-7B (~14 GB bf16). Batch 8 + accum 4 keeps
+# effective batch at 32 while maximising GPU occupancy.
+PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "8"))
+GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "4"))
 NUM_TRAIN_EPOCHS = float(os.environ.get("NUM_TRAIN_EPOCHS", "1"))
 LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "2e-4"))
 
