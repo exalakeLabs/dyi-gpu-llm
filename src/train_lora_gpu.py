@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 import os
 from pathlib import Path
@@ -248,25 +249,19 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
         disable_tqdm=True,
     )
 
-    # Strip kwargs unsupported by older transformers versions, then build args.
-    optional_kwargs = ["include_num_input_tokens_seen", "group_by_length"]
-    extra = {k: True for k in optional_kwargs[:1]}  # include_num_input_tokens_seen=True
-    extra["group_by_length"] = True
+    # Include optional kwargs only when this transformers version supports them.
+    valid = inspect.signature(TrainingArguments.__init__).parameters
+    optional = {
+        "include_num_input_tokens_seen": True,
+        "group_by_length": True,
+    }
+    for key, val in optional.items():
+        if key in valid:
+            kwargs[key] = val
+        else:
+            print(f"Note: transformers {transformers.__version__} does not support {key!r}; skipping.")
 
-    while True:
-        try:
-            return TrainingArguments(**kwargs, **extra)
-        except TypeError as exc:
-            # Pull the unknown kwarg name out of the error message and drop it.
-            bad = str(exc).split("'")[1] if "'" in str(exc) else None
-            if bad and bad in extra:
-                print(f"Warning: transformers does not support {bad!r}; skipping.")
-                del extra[bad]
-            elif bad and bad in kwargs:
-                print(f"Warning: transformers does not support {bad!r}; skipping.")
-                del kwargs[bad]
-            else:
-                raise
+    return TrainingArguments(**kwargs)
 
 
 def main() -> int:
