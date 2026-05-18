@@ -231,7 +231,7 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
         optim="adamw_torch_fused",
         bf16=use_bf16,
         fp16=use_fp16,
-        gradient_checkpointing=True,
+        gradient_checkpointing=GRADIENT_CHECKPOINTING,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         logging_strategy="steps",
         logging_steps=LOGGING_STEPS,
