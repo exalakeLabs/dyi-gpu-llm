@@ -8,7 +8,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--base-model",
-        default="Qwen/Qwen2.5-3B-Instruct",
+        default="mistralai/Mistral-7B-Instruct-v0.3",
         help="Base model name or path",
     )
     parser.add_argument(
