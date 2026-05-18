@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 import os
 from pathlib import Path
@@ -25,13 +26,13 @@ transformers.logging.set_verbosity_info()
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
-MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-3B-Instruct")
+MODEL_NAME = os.environ.get("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.3")
 TRAIN_FILE = os.environ.get("TRAIN_FILE", "/home/ubuntu/llrun/data/train.jsonl")
 OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/home/ubuntu/llrun/output/lora")
 MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "512"))
 
-# A100-40GB has ample VRAM for Qwen2.5-3B. Batch 8 + accum 4 keeps effective
-# batch at 32 while maximising GPU occupancy vs. the old batch=1/accum=16 config.
+# A100-40GB has ample VRAM for Mistral-7B (~14 GB bf16). Batch 8 + accum 4 keeps
+# effective batch at 32 while maximising GPU occupancy.
 PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "8"))
 GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "4"))
 NUM_TRAIN_EPOCHS = float(os.environ.get("NUM_TRAIN_EPOCHS", "1"))
@@ -244,21 +245,23 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
         remove_unused_columns=False,
         dataloader_pin_memory=True,
         dataloader_num_workers=DATALOADER_NUM_WORKERS,
+        group_by_length=True,
         disable_tqdm=True,
     )
 
-    # Some transformers versions support this; older ones may not.
-    try:
-        return TrainingArguments(
-            include_num_input_tokens_seen=True,
-            **kwargs,
-        )
-    except TypeError:
-        print(
-            "Warning: this transformers version does not support "
-            "include_num_input_tokens_seen=True; continuing without it."
-        )
-        return TrainingArguments(**kwargs)
+    # Include optional kwargs only when this transformers version supports them.
+    valid = inspect.signature(TrainingArguments.__init__).parameters
+    optional = {
+        "include_num_input_tokens_seen": True,
+        "group_by_length": True,
+    }
+    for key, val in optional.items():
+        if key in valid:
+            kwargs[key] = val
+        else:
+            print(f"Note: transformers {transformers.__version__} does not support {key!r}; skipping.")
+
+    return TrainingArguments(**kwargs)
 
 
 def main() -> int:
