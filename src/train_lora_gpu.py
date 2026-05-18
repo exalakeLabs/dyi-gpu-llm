@@ -26,9 +26,12 @@ transformers.logging.set_verbosity_info()
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
+MODEL_ROOT = os.environ.get("MODEL_ROOT")
+if MODEL_ROOT is None:
+    raise ValueError("MODEL_ROOT is not set")
 MODEL_NAME = os.environ.get("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.3")
-TRAIN_FILE = os.environ.get("TRAIN_FILE", "/home/ubuntu/llrun/data/train.jsonl")
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", "/home/ubuntu/llrun/output/lora")
+TRAIN_FILE = os.environ.get("TRAIN_FILE", f"{MODEL_ROOT}/data/train.jsonl")
+OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{MODEL_ROOT}/output/lora")
 MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "512"))
 
 # A100-40GB has ample VRAM for Mistral-7B (~14 GB bf16). Batch 8 + accum 4 keeps
