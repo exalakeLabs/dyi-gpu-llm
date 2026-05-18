@@ -36,8 +36,8 @@ MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "512"))
 
 # A100-40GB has ample VRAM for Mistral-7B (~14 GB bf16). Batch 8 + accum 4 keeps
 # effective batch at 32 while maximising GPU occupancy.
-PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "8"))
-GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "4"))
+PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "1"))
+GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "8"))
 NUM_TRAIN_EPOCHS = float(os.environ.get("NUM_TRAIN_EPOCHS", "1"))
 LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "2e-4"))
 GRADIENT_CHECKPOINTING = os.environ.get("GRADIENT_CHECKPOINTING", "0").strip().lower() in (
@@ -297,7 +297,7 @@ def main() -> int:
     print(f"Starting training on: {torch.cuda.get_device_name(0)}")
 
     use_bf16 = torch.cuda.is_bf16_supported()
-    use_fp16 = not use_bf16
+    use_fp16 = False
     warmup_steps = estimate_warmup_steps(len(tokenized_dataset))
 
     training_args = make_training_arguments(
