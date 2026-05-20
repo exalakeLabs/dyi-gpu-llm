@@ -192,7 +192,7 @@ def main():
     gen_tokenizer = AutoTokenizer.from_pretrained(args.generator_model)
     gen_model = AutoModelForCausalLM.from_pretrained(
         args.generator_model,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
         device_map="auto" if torch.cuda.is_available() else None,
     )
     gen_model.eval()
