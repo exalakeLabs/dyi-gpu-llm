@@ -1,10 +1,15 @@
 #!/usr/bin/env python
 
+from __future__ import annotations
+
 import re
 import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+INLINE_WHITESPACE_RE = re.compile(r"[ \t\f\v]+")
+LINE_BREAK_HYPHEN_RE = re.compile(r"(\w)-\n(\w)")
+SEPARATOR_LINE_RE = re.compile(r"[-=_*]{4,}")
 
 
 def env_dir(var: str, default_rel: str) -> Path:
@@ -16,29 +21,54 @@ def env_dir(var: str, default_rel: str) -> Path:
 
 IN_DIR = env_dir("LLAMA_TEXT_DIR", "text")
 OUT_DIR = env_dir("LLAMA_PREPARED_DIR", "prepared")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def clean_text(text: str) -> str:
-    # normalize newlines
+    text = text.replace("\x00", " ").replace("\ufeff", "")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
 
-    # remove repeated blank lines
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
     # de-hyphenate line breaks like "architec-\nture"
-    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
+    text = LINE_BREAK_HYPHEN_RE.sub(r"\1\2", text)
 
-    # join wrapped lines within paragraphs
-    text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+    paragraphs: list[str] = []
+    paragraph_lines: list[str] = []
 
-    # normalize spaces
-    text = re.sub(r"[ \t]{2,}", " ", text)
+    def flush_paragraph() -> None:
+        if paragraph_lines:
+            paragraphs.append(" ".join(paragraph_lines))
+            paragraph_lines.clear()
 
-    return text.strip()
+    for raw_line in text.split("\n"):
+        line = INLINE_WHITESPACE_RE.sub(" ", raw_line).strip()
+        if not line:
+            flush_paragraph()
+            continue
+        if SEPARATOR_LINE_RE.fullmatch(line):
+            flush_paragraph()
+            continue
+        paragraph_lines.append(line)
 
-for txt_file in sorted(IN_DIR.glob("*.txt")):
+    flush_paragraph()
+    return "\n".join(paragraphs).strip()
+
+
+def clean_file(txt_file: Path, out_dir: Path) -> Path:
     raw = txt_file.read_text(encoding="utf-8", errors="ignore")
     cleaned = clean_text(raw)
-    out_file = OUT_DIR / txt_file.name
+    out_file = out_dir / txt_file.name
     out_file.write_text(cleaned, encoding="utf-8")
-    print(f"Cleaned {txt_file.name}")
+    return out_file
+
+
+def main() -> int:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    for txt_file in sorted(IN_DIR.glob("*.txt")):
+        clean_file(txt_file, OUT_DIR)
+        print(f"Cleaned {txt_file.name}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
