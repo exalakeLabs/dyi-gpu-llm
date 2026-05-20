@@ -21,9 +21,12 @@ pip install \
   transformers \
   datasets \
   accelerate \
-  flash-attn \
   sentencepiece \
   evaluate
+
+Optional CUDA acceleration:
+
+pip install flash-attn --no-build-isolation
 
 Example:
 
@@ -153,6 +156,42 @@ def tokenize_dataset(dataset, tokenizer, seq_len=2048):
     )
 
     return lm_dataset
+
+# ============================================================
+# Model loading
+# ============================================================
+
+def load_causal_lm(model_name):
+
+    common = dict(
+        pretrained_model_name_or_path=model_name,
+        dtype=torch.bfloat16,
+        trust_remote_code=True,
+        device_map="auto",
+    )
+
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            **common,
+            attn_implementation="flash_attention_2",
+        )
+        print("Flash Attention 2 enabled.")
+        return model
+    except (ImportError, ValueError) as e:
+        print(f"Flash Attention 2 not available; falling back to SDPA. ({e})")
+
+    try:
+        model = AutoModelForCausalLM.from_pretrained(
+            **common,
+            attn_implementation="sdpa",
+        )
+        print("SDPA attention enabled.")
+        return model
+    except (ImportError, ValueError) as e:
+        print(f"SDPA not available; falling back to default attention. ({e})")
+
+    return AutoModelForCausalLM.from_pretrained(**common)
+
 
 # ============================================================
 # Freeze lower layers
@@ -322,13 +361,7 @@ def main():
 
     print("\nLoading model...\n")
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_name,
-        dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
-        trust_remote_code=True,
-        device_map="auto",
-    )
+    model = load_causal_lm(args.model_name)
 
     # Required with gradient checkpointing
     model.config.use_cache = False

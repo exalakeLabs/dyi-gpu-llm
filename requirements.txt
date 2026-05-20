@@ -17,6 +17,9 @@ uvicorn[standard]>=0.27.0
 pydantic>=2.5.0
 requests>=2.31.0
 pypdf>=4.0.0
-flash-attn
 sentencepiece
 evaluate
+
+# Optional CUDA-only acceleration. Install after torch in a compatible CUDA env:
+#   pip install flash-attn --no-build-isolation
+# Keep it out of the base requirements because its build step imports torch.
