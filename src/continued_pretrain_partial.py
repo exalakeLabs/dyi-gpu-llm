@@ -53,6 +53,7 @@ from transformers import (
     TrainingArguments,
     DataCollatorForLanguageModeling,
 )
+from transformers.trainer_utils import get_last_checkpoint
 
 # ============================================================
 # Tensor Core / A100 optimizations
@@ -67,6 +68,8 @@ torch.set_float32_matmul_precision("high")
 # ============================================================
 
 DEFAULT_MODEL = "Qwen/Qwen2.5-3B"
+DEFAULT_OUTPUT_DIR = "~/pretrain/output_partial"
+DEFAULT_SAVE_STEPS = 250
 
 # Good alternatives:
 # "mistralai/Mistral-7B-v0.1"
@@ -307,6 +310,23 @@ def compute_metrics(eval_pred):
 # Training arguments
 # ============================================================
 
+def estimate_training_steps(
+    num_examples,
+    num_train_epochs=1,
+    per_device_train_batch_size=2,
+    gradient_accumulation_steps=16,
+):
+    if num_examples <= 0:
+        return 0
+
+    effective_batch_size = max(
+        1,
+        per_device_train_batch_size * gradient_accumulation_steps,
+    )
+    steps_per_epoch = max(1, math.ceil(num_examples / effective_batch_size))
+    return max(1, math.ceil(steps_per_epoch * num_train_epochs))
+
+
 def estimate_warmup_steps(
     num_examples,
     num_train_epochs=1,
@@ -317,28 +337,35 @@ def estimate_warmup_steps(
     if num_examples <= 0 or warmup_ratio <= 0:
         return 0
 
-    effective_batch_size = max(
-        1,
-        per_device_train_batch_size * gradient_accumulation_steps,
+    total_steps = estimate_training_steps(
+        num_examples,
+        num_train_epochs=num_train_epochs,
+        per_device_train_batch_size=per_device_train_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
     )
-    steps_per_epoch = max(1, math.ceil(num_examples / effective_batch_size))
-    total_steps = max(1, math.ceil(steps_per_epoch * num_train_epochs))
     return max(1, int(total_steps * warmup_ratio))
 
 
-def make_training_arguments(output_dir, train_examples):
+def make_training_arguments(output_dir, train_examples, requested_save_steps=DEFAULT_SAVE_STEPS):
 
     valid = inspect.signature(TrainingArguments.__init__).parameters
 
     num_train_epochs = 1
     per_device_train_batch_size = 8
     gradient_accumulation_steps = 128
+    training_steps = estimate_training_steps(
+        train_examples,
+        num_train_epochs=num_train_epochs,
+        per_device_train_batch_size=per_device_train_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+    )
     warmup_steps = estimate_warmup_steps(
         train_examples,
         num_train_epochs=num_train_epochs,
         per_device_train_batch_size=per_device_train_batch_size,
         gradient_accumulation_steps=gradient_accumulation_steps,
     )
+    save_steps = max(1, min(requested_save_steps, training_steps))
 
     kwargs = dict(
         output_dir=str(output_dir),
@@ -352,8 +379,8 @@ def make_training_arguments(output_dir, train_examples):
         bf16=True,
         tf32=True,
         logging_steps=1,
-        save_steps=250,
-        eval_steps=250,
+        save_steps=save_steps,
+        eval_steps=save_steps,
         save_total_limit=2,
         report_to="none",
         gradient_checkpointing=True,
@@ -366,7 +393,7 @@ def make_training_arguments(output_dir, train_examples):
     )
 
     if "overwrite_output_dir" in valid:
-        kwargs["overwrite_output_dir"] = True
+        kwargs["overwrite_output_dir"] = False
 
     if "eval_strategy" in valid:
         kwargs["eval_strategy"] = "steps"
@@ -374,6 +401,9 @@ def make_training_arguments(output_dir, train_examples):
         kwargs["evaluation_strategy"] = "steps"
     else:
         print("Note: this transformers version does not expose an eval strategy argument.")
+
+    if "save_strategy" in valid:
+        kwargs["save_strategy"] = "steps"
 
     unsupported = [
         key
@@ -406,7 +436,8 @@ def main():
 
     parser.add_argument(
         "--output_dir",
-        required=True,
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"Checkpoint and final model output directory. Defaults to {DEFAULT_OUTPUT_DIR}.",
     )
 
     parser.add_argument(
@@ -426,7 +457,16 @@ def main():
         default=8,
     )
 
+    parser.add_argument(
+        "--save_steps",
+        type=int,
+        default=DEFAULT_SAVE_STEPS,
+        help="Checkpoint interval in optimizer steps. Small runs are capped to save at least one checkpoint.",
+    )
+
     args = parser.parse_args()
+    output_dir = Path(args.output_dir).expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # ========================================================
     # Load tokenizer
@@ -521,9 +561,12 @@ def main():
     # ========================================================
 
     training_args = make_training_arguments(
-        args.output_dir,
+        output_dir,
         train_examples=len(train_dataset),
+        requested_save_steps=args.save_steps,
     )
+
+    print(f"\nCheckpoint/output directory: {output_dir}\n")
 
     # ========================================================
     # Trainer
@@ -551,7 +594,13 @@ def main():
 
     print("\nSTARTING CONTINUED PRETRAINING\n")
 
-    trainer.train()
+    last_checkpoint = get_last_checkpoint(str(output_dir))
+    if last_checkpoint:
+        print(f"Resuming from checkpoint: {last_checkpoint}")
+        trainer.train(resume_from_checkpoint=last_checkpoint)
+    else:
+        print("No valid checkpoint found. Starting fresh.")
+        trainer.train()
 
     # ========================================================
     # Final evaluation
@@ -567,9 +616,9 @@ def main():
 
     print("\nSaving model...\n")
 
-    trainer.save_model(args.output_dir)
+    trainer.save_model(str(output_dir))
 
-    tokenizer.save_pretrained(args.output_dir)
+    tokenizer.save_pretrained(str(output_dir))
 
     print("\nDONE\n")
 
