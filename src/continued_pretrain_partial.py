@@ -331,8 +331,8 @@ def make_training_arguments(output_dir, train_examples):
     valid = inspect.signature(TrainingArguments.__init__).parameters
 
     num_train_epochs = 1
-    per_device_train_batch_size = 2
-    gradient_accumulation_steps = 16
+    per_device_train_batch_size = 8
+    gradient_accumulation_steps = 128
     warmup_steps = estimate_warmup_steps(
         train_examples,
         num_train_epochs=num_train_epochs,
@@ -452,9 +452,9 @@ def main():
     model.config.use_cache = False
 
     # PyTorch 2.x compile
-    print("\nCompiling model...\n")
+    #print("\nCompiling model...\n")
 
-    model = torch.compile(model)
+    #model = torch.compile(model)
 
     # ========================================================
     # Freeze lower layers
