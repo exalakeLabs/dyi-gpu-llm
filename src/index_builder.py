@@ -23,7 +23,7 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
-DEFAULT_EMBED_MODEL = "BAAI/bge-base-en-v1.5"
+DEFAULT_EMBED_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
 
 
 def iter_text_files(root: Path):
