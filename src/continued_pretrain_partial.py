@@ -307,20 +307,48 @@ def compute_metrics(eval_pred):
 # Training arguments
 # ============================================================
 
-def make_training_arguments(output_dir):
+def estimate_warmup_steps(
+    num_examples,
+    num_train_epochs=1,
+    per_device_train_batch_size=2,
+    gradient_accumulation_steps=16,
+    warmup_ratio=0.03,
+):
+    if num_examples <= 0 or warmup_ratio <= 0:
+        return 0
+
+    effective_batch_size = max(
+        1,
+        per_device_train_batch_size * gradient_accumulation_steps,
+    )
+    steps_per_epoch = max(1, math.ceil(num_examples / effective_batch_size))
+    total_steps = max(1, math.ceil(steps_per_epoch * num_train_epochs))
+    return max(1, int(total_steps * warmup_ratio))
+
+
+def make_training_arguments(output_dir, train_examples):
 
     valid = inspect.signature(TrainingArguments.__init__).parameters
 
+    num_train_epochs = 1
+    per_device_train_batch_size = 2
+    gradient_accumulation_steps = 16
+    warmup_steps = estimate_warmup_steps(
+        train_examples,
+        num_train_epochs=num_train_epochs,
+        per_device_train_batch_size=per_device_train_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+    )
+
     kwargs = dict(
         output_dir=str(output_dir),
-        overwrite_output_dir=True,
-        num_train_epochs=1,
+        num_train_epochs=num_train_epochs,
         learning_rate=2e-6,
         weight_decay=0.01,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=16,
+        per_device_train_batch_size=per_device_train_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         bf16=True,
         tf32=True,
         logging_steps=1,
@@ -336,6 +364,9 @@ def make_training_arguments(output_dir):
         max_grad_norm=1.0,
         remove_unused_columns=False,
     )
+
+    if "overwrite_output_dir" in valid:
+        kwargs["overwrite_output_dir"] = True
 
     if "eval_strategy" in valid:
         kwargs["eval_strategy"] = "steps"
@@ -489,7 +520,10 @@ def main():
     # Training arguments
     # ========================================================
 
-    training_args = make_training_arguments(args.output_dir)
+    training_args = make_training_arguments(
+        args.output_dir,
+        train_examples=len(train_dataset),
+    )
 
     # ========================================================
     # Trainer
