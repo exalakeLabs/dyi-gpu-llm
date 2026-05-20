@@ -39,6 +39,7 @@ python continued_pretrain_partial_optimized.py \
 import os
 import math
 import argparse
+import inspect
 from pathlib import Path
 
 import torch
@@ -301,6 +302,59 @@ def compute_metrics(eval_pred):
         "perplexity": perplexity,
     }
 
+
+# ============================================================
+# Training arguments
+# ============================================================
+
+def make_training_arguments(output_dir):
+
+    valid = inspect.signature(TrainingArguments.__init__).parameters
+
+    kwargs = dict(
+        output_dir=str(output_dir),
+        overwrite_output_dir=True,
+        num_train_epochs=1,
+        learning_rate=2e-6,
+        weight_decay=0.01,
+        warmup_ratio=0.03,
+        lr_scheduler_type="cosine",
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=16,
+        bf16=True,
+        tf32=True,
+        logging_steps=1,
+        save_steps=250,
+        eval_steps=250,
+        save_total_limit=2,
+        report_to="none",
+        gradient_checkpointing=True,
+        optim="adamw_torch_fused",
+        dataloader_num_workers=8,
+        dataloader_pin_memory=True,
+        dataloader_persistent_workers=True,
+        max_grad_norm=1.0,
+        remove_unused_columns=False,
+    )
+
+    if "eval_strategy" in valid:
+        kwargs["eval_strategy"] = "steps"
+    elif "evaluation_strategy" in valid:
+        kwargs["evaluation_strategy"] = "steps"
+    else:
+        print("Note: this transformers version does not expose an eval strategy argument.")
+
+    unsupported = [
+        key
+        for key in sorted(kwargs)
+        if key not in valid
+    ]
+    for key in unsupported:
+        print(f"Note: this transformers version does not support {key!r}; skipping.")
+        del kwargs[key]
+
+    return TrainingArguments(**kwargs)
+
 # ============================================================
 # Main
 # ============================================================
@@ -435,56 +489,7 @@ def main():
     # Training arguments
     # ========================================================
 
-    training_args = TrainingArguments(
-
-        output_dir=args.output_dir,
-
-        overwrite_output_dir=True,
-
-        num_train_epochs=1,
-
-        learning_rate=2e-6,
-
-        weight_decay=0.01,
-
-        warmup_ratio=0.03,
-
-        lr_scheduler_type="cosine",
-
-        per_device_train_batch_size=2,
-
-        gradient_accumulation_steps=16,
-
-        bf16=True,
-
-        tf32=True,
-
-        logging_steps=1,
-
-        save_steps=250,
-
-        eval_steps=250,
-
-        evaluation_strategy="steps",
-
-        save_total_limit=2,
-
-        report_to="none",
-
-        gradient_checkpointing=True,
-
-        optim="adamw_torch_fused",
-
-        dataloader_num_workers=8,
-
-        dataloader_pin_memory=True,
-
-        dataloader_persistent_workers=True,
-
-        max_grad_norm=1.0,
-
-        remove_unused_columns=False,
-    )
+    training_args = make_training_arguments(args.output_dir)
 
     # ========================================================
     # Trainer
