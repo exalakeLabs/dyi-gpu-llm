@@ -3,18 +3,17 @@
 Distributed LoRA fine-tuning via PySpark TorchDistributor.
 
 IMPORTANT: checkpoint and adapter output paths must be on shared storage
-visible to all workers (DBFS, NFS, S3, etc.).  Set LLAMA_SHARED_OUTPUT_DIR
-to point there before running, or the per-worker saves will be silently
-inconsistent.
+visible to all workers (DBFS, NFS, S3, etc.). Pass --shared-output-dir so the
+driver and workers agree on a single checkpoint location.
 
 Single-node multi-GPU (default, no Spark cluster needed):
-    LLAMA_SHARED_OUTPUT_DIR=/mnt/shared python src/train_lora_spark.py
+    python src/train_lora_spark.py --shared-output-dir /mnt/shared
 
 Multi-node (e.g. 2 nodes × 4 GPUs = 8 processes):
-    LLAMA_SPARK_NUM_PROCESSES=8 \\
-    LLAMA_SPARK_LOCAL_MODE=false \\
-    LLAMA_SHARED_OUTPUT_DIR=/dbfs/mnt/shared \\
-    python src/train_lora_spark.py
+    python src/train_lora_spark.py \\
+        --num-processes 8 \\
+        --no-local-mode \\
+        --shared-output-dir /dbfs/mnt/shared
 
 Scaling notes:
   - per_device_train_batch_size stays fixed per GPU; effective batch grows with
@@ -25,8 +24,7 @@ Scaling notes:
     under DDP when sequences have variable length.
 """
 
-import os
-import sys
+import argparse
 from pathlib import Path
 
 
@@ -143,6 +141,29 @@ def train_fn(
 # Driver — sets up TorchDistributor and launches train_fn on each worker.
 # ---------------------------------------------------------------------------
 
+def parse_args() -> argparse.Namespace:
+    from project_config import ADAPTER_DIR, BASE_MODEL, LORA_DIR, TRAIN_FILE
+
+    parser = argparse.ArgumentParser(description="Distributed LoRA fine-tuning via PySpark.")
+    parser.add_argument("--base-model", default=BASE_MODEL)
+    parser.add_argument("--train-file", default=str(TRAIN_FILE))
+    parser.add_argument("--lora-dir", default=str(LORA_DIR))
+    parser.add_argument("--adapter-dir", default=str(ADAPTER_DIR))
+    parser.add_argument(
+        "--shared-output-dir",
+        default=None,
+        help="Shared storage root for lora/ checkpoints and final adapter.",
+    )
+    parser.add_argument("--num-processes", type=int, default=1)
+    parser.add_argument(
+        "--local-mode",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run TorchDistributor in Spark local mode.",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
     try:
         from pyspark.ml.torch.distributor import TorchDistributor
@@ -151,41 +172,32 @@ def main() -> int:
             "pyspark is not installed. Run: pip install pyspark"
         )
 
-    # project_config is driver-side only; pass resolved strings into train_fn
-    # so workers don't need to re-evaluate env vars against the driver's cwd.
-    from project_config import ADAPTER_DIR, LORA_DIR, TRAIN_FILE, BASE_MODEL
+    args = parse_args()
 
-    num_processes = int(os.environ.get("LLAMA_SPARK_NUM_PROCESSES", "1"))
-    local_mode = os.environ.get("LLAMA_SPARK_LOCAL_MODE", "true").lower() not in (
-        "false", "0", "no"
-    )
+    train_file = Path(args.train_file).expanduser()
+    lora_dir = Path(args.lora_dir).expanduser()
+    adapter_dir = Path(args.adapter_dir).expanduser()
 
-    lora_dir = LORA_DIR
-    adapter_dir = ADAPTER_DIR
-
-    # Override output paths with shared storage when set, so all workers and
-    # the driver agree on a single checkpoint location.
-    shared_root = os.environ.get("LLAMA_SHARED_OUTPUT_DIR", "").strip()
-    if shared_root:
-        shared = Path(shared_root).expanduser()
+    if args.shared_output_dir:
+        shared = Path(args.shared_output_dir).expanduser()
         lora_dir = shared / "lora"
         adapter_dir = lora_dir / "final"
 
     lora_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"TorchDistributor: num_processes={num_processes}, local_mode={local_mode}")
-    print(f"Train file : {TRAIN_FILE}")
+    print(f"TorchDistributor: num_processes={args.num_processes}, local_mode={args.local_mode}")
+    print(f"Train file : {train_file}")
     print(f"Output dir : {lora_dir}")
 
     distributor = TorchDistributor(
-        num_processes=num_processes,
-        local_mode=local_mode,
+        num_processes=args.num_processes,
+        local_mode=args.local_mode,
         use_gpu=True,
     )
     distributor.run(
         train_fn,
-        BASE_MODEL,
-        str(TRAIN_FILE),
+        args.base_model,
+        str(train_file),
         str(lora_dir),
         str(adapter_dir),
     )

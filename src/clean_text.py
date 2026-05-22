@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
 import re
-import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -12,15 +12,11 @@ LINE_BREAK_HYPHEN_RE = re.compile(r"(\w)-\n(\w)")
 SEPARATOR_LINE_RE = re.compile(r"[-=_*]{4,}")
 
 
-def env_dir(var: str, default_rel: str) -> Path:
-    v = os.environ.get(var, "").strip()
-    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p
-
-IN_DIR = env_dir("LLAMA_TEXT_DIR", "text")
-OUT_DIR = env_dir("LLAMA_PREPARED_DIR", "prepared")
+def repo_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path
 
 
 def clean_text(text: str) -> str:
@@ -60,11 +56,29 @@ def clean_file(txt_file: Path, out_dir: Path) -> Path:
     return out_file
 
 
-def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Clean text/*.txt into prepared/*.txt.")
+    parser.add_argument(
+        "--input-dir",
+        default=str(repo_path("text")),
+        help="Directory containing raw .txt files.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(repo_path("prepared")),
+        help="Directory for cleaned .txt files.",
+    )
+    return parser.parse_args()
 
-    for txt_file in sorted(IN_DIR.glob("*.txt")):
-        clean_file(txt_file, OUT_DIR)
+
+def main() -> int:
+    args = parse_args()
+    input_dir = Path(args.input_dir).expanduser()
+    output_dir = Path(args.output_dir).expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for txt_file in sorted(input_dir.glob("*.txt")):
+        clean_file(txt_file, output_dir)
         print(f"Cleaned {txt_file.name}")
 
     return 0

@@ -2,18 +2,19 @@
 
 import argparse
 from model_runtime import load_generation_model
+from project_config import ADAPTER_DIR, BASE_MODEL
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--base-model",
-        default="mistralai/Mistral-7B-Instruct-v0.3",
+        default=BASE_MODEL,
         help="Base model name or path",
     )
     parser.add_argument(
         "--adapter",
-        default="/home/alex2/llrun/output/lora/final",
+        default=str(ADAPTER_DIR),
         help="LoRA adapter path",
     )
     parser.add_argument(
@@ -35,6 +36,7 @@ def main():
     args = parser.parse_args()
 
     tokenizer, model = load_generation_model(
+        base_model=args.base_model,
         adapter_path=args.adapter,
         use_adapter=not args.no_adapter,
     )

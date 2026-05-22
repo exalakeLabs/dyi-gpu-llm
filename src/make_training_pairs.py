@@ -7,7 +7,6 @@ import random
 import re
 from pathlib import Path
 from typing import Iterable, List, Tuple
-import os
 
 START_MARKERS = [
     "START OF THE PROJECT GUTENBERG EBOOK",
@@ -24,30 +23,31 @@ END_MARKERS = [
 ]
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-def env_dir(var: str, default_rel: str) -> Path:
-    v = os.environ.get(var, "").strip()
-    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p
 
 
-IN_DIR = env_dir("LLAMA_PREPARED_DIR", "prepared")
-OUT_DIR = env_dir("LLAMA_DATA_DIR", "data")
+def repo_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Build continuation-style training pairs from Gutenberg .txt books."
     )
-    p.add_argument("--text-dir", default=IN_DIR, help="Directory containing .txt files")
+    p.add_argument(
+        "--text-dir",
+        default=str(repo_path("prepared")),
+        help="Directory containing .txt files",
+    )
     p.add_argument(
         "--output-train",
-        default=OUT_DIR / "train.jsonl",
+        default=str(repo_path("data/train.jsonl")),
         help="Output JSONL for training split",
     )
     p.add_argument(
         "--output-val",
-        default=OUT_DIR / "gutenberg_val.jsonl",
+        default=str(repo_path("data/gutenberg_val.jsonl")),
         help="Output JSONL for validation split",
     )
     p.add_argument(

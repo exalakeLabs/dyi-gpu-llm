@@ -74,14 +74,14 @@ def patch_rocm_isin() -> None:
     torch.isin = safe_isin
 
 
-def load_tokenizer():
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
+def load_tokenizer(base_model: str = BASE_MODEL):
+    tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     return tokenizer
 
 
-def load_base_model(**kwargs):
+def load_base_model(base_model: str = BASE_MODEL, **kwargs):
     # device_map={"": 0} targets device 0 (works for ROCm/HIP and CUDA alike).
     # Omitted on CPU-only builds: transformers raises when no accelerator is present.
     model_kwargs: dict = {
@@ -92,13 +92,18 @@ def load_base_model(**kwargs):
     if torch.cuda.is_available():
         model_kwargs["device_map"] = {"": 0}
     model_kwargs.update(kwargs)
-    return AutoModelForCausalLM.from_pretrained(BASE_MODEL, **model_kwargs)
+    return AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
 
 
-def load_generation_model(adapter_path=ADAPTER_DIR, use_adapter=True, **model_kwargs):
+def load_generation_model(
+    base_model: str = BASE_MODEL,
+    adapter_path=ADAPTER_DIR,
+    use_adapter=True,
+    **model_kwargs,
+):
     patch_rocm_isin()
-    tokenizer = load_tokenizer()
-    model = load_base_model(**model_kwargs)
+    tokenizer = load_tokenizer(base_model)
+    model = load_base_model(base_model, **model_kwargs)
 
     if use_adapter:
         adapter_path = pathlib.Path(adapter_path)

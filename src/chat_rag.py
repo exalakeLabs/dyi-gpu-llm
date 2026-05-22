@@ -1,26 +1,23 @@
 #!/usr/bin/env python
+import argparse
 import json
+from pathlib import Path
 
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from model_runtime import generate_text, load_generation_model
-from project_config import ADAPTER_DIR, env_dir
+from project_config import ADAPTER_DIR, BASE_MODEL, repo_path
 
-
-RAG_DIR = env_dir("LLAMA_RAG_DIR", "rag")
-
-CHUNKS_FILE = RAG_DIR / "chunks.jsonl"
-INDEX_FILE = RAG_DIR / "index.faiss"
 
 EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 TOP_K = 4
 
 
-def load_chunks():
+def load_chunks(chunks_file: Path):
     rows = []
-    with CHUNKS_FILE.open("r", encoding="utf-8") as f:
+    with chunks_file.open("r", encoding="utf-8") as f:
         for line in f:
             rows.append(json.loads(line))
     return rows
@@ -53,11 +50,29 @@ def format_context(hits):
 
 
 def main() -> int:
-    rows = load_chunks()
-    index = faiss.read_index(str(INDEX_FILE))
-    embedder = SentenceTransformer(EMBED_MODEL)
+    parser = argparse.ArgumentParser(description="Chat with a local FAISS RAG index.")
+    parser.add_argument("--rag-dir", default=str(repo_path("rag")))
+    parser.add_argument("--base-model", default=BASE_MODEL)
+    parser.add_argument("--adapter-dir", default=str(ADAPTER_DIR))
+    parser.add_argument("--no-adapter", action="store_true")
+    parser.add_argument("--embed-model", default=EMBED_MODEL)
+    parser.add_argument("--top-k", type=int, default=TOP_K)
+    args = parser.parse_args()
 
-    tokenizer, model = load_generation_model(use_adapter=ADAPTER_DIR.exists())
+    rag_dir = Path(args.rag_dir).expanduser()
+    chunks_file = rag_dir / "chunks.jsonl"
+    index_file = rag_dir / "index.faiss"
+    adapter_dir = Path(args.adapter_dir).expanduser()
+
+    rows = load_chunks(chunks_file)
+    index = faiss.read_index(str(index_file))
+    embedder = SentenceTransformer(args.embed_model)
+
+    tokenizer, model = load_generation_model(
+        base_model=args.base_model,
+        adapter_path=adapter_dir,
+        use_adapter=not args.no_adapter and adapter_dir.exists(),
+    )
 
     system_prompt = (
         "You are a grounded assistant. Answer only using the provided context from the local document corpus. "
@@ -71,7 +86,7 @@ def main() -> int:
         if not query or query.lower() in {"quit", "exit"}:
             break
 
-        hits = retrieve(query, embedder, index, rows, top_k=TOP_K)
+        hits = retrieve(query, embedder, index, rows, top_k=args.top_k)
         context = format_context(hits)
 
         print("\n--- RETRIEVED CONTEXT ---\n")

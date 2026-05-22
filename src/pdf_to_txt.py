@@ -9,18 +9,16 @@ corresponding `*.txt` file into `--text-dir` (default: `text/`).
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def env_dir(var: str, default_rel: str) -> Path:
-    v = os.environ.get(var, "").strip()
-    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p
+def repo_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path
 
 
 def extract_pdf_to_text(pdf_path: Path) -> str:
@@ -48,8 +46,8 @@ def extract_pdf_to_text(pdf_path: Path) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pdf-dir", default=str(env_dir("LLAMA_PDF_DIR", "pdfs")))
-    ap.add_argument("--text-dir", default=str(env_dir("LLAMA_TEXT_DIR", "text")))
+    ap.add_argument("--pdf-dir", default=str(repo_path("pdfs")))
+    ap.add_argument("--text-dir", default=str(repo_path("text")))
     args = ap.parse_args()
 
     pdf_dir = Path(args.pdf_dir)
@@ -69,4 +67,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

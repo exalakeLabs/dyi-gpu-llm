@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
-
 
 
 ROOT = Path(__file__).resolve().parent
@@ -59,12 +57,10 @@ def main() -> int:
     ensure_exists(TRAIN_GPU)
     ensure_exists(TRAIN_CPU)
 
-    env = os.environ.copy()
-
     print("Project root:", ROOT)
     print("Python:", py)
 
-    #rc = run_step([py, str(MAKE_PAIRS)], env=env)
+    #rc = run_step([py, str(MAKE_PAIRS)])
     #if rc != 0:
     #    print(f"[ERROR] make_training_pairs.py failed with exit code {rc}")
     #    return rc
@@ -76,7 +72,7 @@ def main() -> int:
         print("[INFO] CUDA not detected. Using CPU trainer.")
         trainer = TRAIN_CPU
 
-    rc = run_step([py, str(trainer)], env=env)
+    rc = run_step([py, str(trainer)])
     if rc != 0:
         print(f"[ERROR] {trainer.name} failed with exit code {rc}")
         return rc
@@ -88,4 +84,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-PY

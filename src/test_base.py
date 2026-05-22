@@ -2,13 +2,14 @@
 
 import argparse
 from model_runtime import load_generation_model
+from project_config import BASE_MODEL
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--base-model",
-        default="mistralai/Mistral-7B-Instruct-v0.3",
+        default=BASE_MODEL,
         help="Base model name or path",
     )
     parser.add_argument(
@@ -25,6 +26,7 @@ def main():
     args = parser.parse_args()
 
     tokenizer, model = load_generation_model(
+        base_model=args.base_model,
         use_adapter=False,
     )
 

@@ -2,7 +2,6 @@
 
 import argparse
 import re
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -17,16 +16,13 @@ except ModuleNotFoundError:
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def env_dir(var: str, default_rel: str) -> Path:
-    v = os.environ.get(var, "").strip()
-    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p
+def repo_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path
 
 API_BASE = "https://gutendex.com/books"
-OUT_DIR = env_dir("LLAMA_TEXT_DIR", "text")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 PREFERRED_TEXT_KEYS = [
     "text/plain; charset=utf-8",
@@ -80,7 +76,15 @@ def main():
     parser.add_argument("--topic", default=None, help="Optional subject/topic filter")
     parser.add_argument("--language", default="en", help="Language code, default: en")
     parser.add_argument("--max-books", type=int, default=20, help="Maximum number of books to download")
+    parser.add_argument(
+        "--output-dir",
+        default=str(repo_path("text")),
+        help="Directory for downloaded .txt files.",
+    )
     args = parser.parse_args()
+
+    output_dir = Path(args.output_dir).expanduser()
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     count = 0
     skipped = 0
@@ -97,7 +101,7 @@ def main():
             continue
 
         filename = f"{book_id}_{safe_name(title)}.txt"
-        path = OUT_DIR / filename
+        path = output_dir / filename
 
         if path.exists():
             print(f"[exists] {path.name}")

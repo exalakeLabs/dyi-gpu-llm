@@ -1,26 +1,20 @@
 #!/usr/bin/env python3
 
+import argparse
 from pathlib import Path
-from pypdf import PdfReader
-
-import os
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
-def env_dir(var: str, default_rel: str) -> Path:
-    v = os.environ.get(var, "").strip()
-    p = Path(v).expanduser() if v else (REPO_ROOT / default_rel)
-    if not p.is_absolute():
-        p = REPO_ROOT / p
-    return p
+def repo_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path
 
-
-PDF_DIR = env_dir("LLAMA_PDF_DIR", "pdfs")
-OUT_DIR = env_dir("LLAMA_TEXT_DIR", "text")
-OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 from pypdf import PdfReader
+
 
 def extract_pdf(pdf_path):
     try:
@@ -48,9 +42,28 @@ def extract_pdf(pdf_path):
         print(f"[FAILED] {pdf_path}: {e}")
         return ""
 
-for pdf_file in sorted(PDF_DIR.glob("*.pdf")):
-    text = extract_pdf(pdf_file)
-    out_file = OUT_DIR / f"{pdf_file.stem}.txt"
-    out_file.write_text(text, encoding="utf-8")
-    print(f"Wrote {out_file}")
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Extract text from PDFs.")
+    parser.add_argument("--pdf-dir", default=str(repo_path("pdfs")))
+    parser.add_argument("--text-dir", default=str(repo_path("text")))
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    pdf_dir = Path(args.pdf_dir).expanduser()
+    text_dir = Path(args.text_dir).expanduser()
+    text_dir.mkdir(parents=True, exist_ok=True)
+
+    for pdf_file in sorted(pdf_dir.glob("*.pdf")):
+        text = extract_pdf(pdf_file)
+        out_file = text_dir / f"{pdf_file.stem}.txt"
+        out_file.write_text(text, encoding="utf-8")
+        print(f"Wrote {out_file}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

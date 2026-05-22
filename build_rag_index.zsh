@@ -7,8 +7,8 @@ cd "$ROOT"
 python ./src/clean_text.py
 
 python ./src/index_builder.py \
-  --input-dir $LLAMA_PREPARED_DIR \
-  --output-dir $LLAMA_RAG_DIR \
+  --input-dir prepared \
+  --output-dir rag \
   --embed-model BAAI/bge-base-en-v1.5 \
   --chunk-size-chars 1800 \
   --overlap-chars 250 \

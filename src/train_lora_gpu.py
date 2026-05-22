@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import inspect
 import math
-import os
 from pathlib import Path
 
 import torch
@@ -21,41 +21,24 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 
 from model_runtime import is_rocm, patch_rocm_isin
+from project_config import BASE_MODEL, LORA_DIR, TRAIN_FILE
 
 transformers.logging.set_verbosity_info()
 
 # "cuda" | "rocm" — set by configure_gpu_backend() in main()
 GPU_BACKEND: str = "none"
 
-MODEL_ROOT = os.environ.get("MODEL_ROOT")
-if MODEL_ROOT is None:
-    raise ValueError("MODEL_ROOT is not set")
-MODEL_NAME = os.environ.get("MODEL_NAME", "mistralai/Mistral-7B-Instruct-v0.3")
-TRAIN_FILE = os.environ.get("TRAIN_FILE", f"{MODEL_ROOT}/data/train.jsonl")
-OUTPUT_DIR = os.environ.get("OUTPUT_DIR", f"{MODEL_ROOT}/output/lora")
-MAX_LENGTH = int(os.environ.get("MAX_LENGTH", "512"))
-
-# A100-40GB has ample VRAM for Mistral-7B (~14 GB bf16). Batch 8 + accum 4 keeps
-# effective batch at 32 while maximising GPU occupancy.
-PER_DEVICE_TRAIN_BATCH_SIZE = int(os.environ.get("PER_DEVICE_TRAIN_BATCH_SIZE", "1"))
-GRADIENT_ACCUMULATION_STEPS = int(os.environ.get("GRADIENT_ACCUMULATION_STEPS", "8"))
-NUM_TRAIN_EPOCHS = float(os.environ.get("NUM_TRAIN_EPOCHS", "1"))
-LEARNING_RATE = float(os.environ.get("LEARNING_RATE", "2e-4"))
-GRADIENT_CHECKPOINTING = os.environ.get("GRADIENT_CHECKPOINTING", "0").strip().lower() in (
-    "1",
-    "true",
-    "yes",
-)
-
-# LoRA rank — bumped to 16 (alpha=32) to make better use of available VRAM.
-LORA_RANK = int(os.environ.get("LORA_RANK", "16"))
-
-# Verbose logging / checkpoint defaults
-LOGGING_STEPS = int(os.environ.get("LOGGING_STEPS", "1"))
-SAVE_STEPS = int(os.environ.get("SAVE_STEPS", "100"))
-SAVE_TOTAL_LIMIT = int(os.environ.get("SAVE_TOTAL_LIMIT", "3"))
-WARMUP_RATIO = float(os.environ.get("WARMUP_RATIO", "0.03"))
-DATALOADER_NUM_WORKERS = int(os.environ.get("DATALOADER_NUM_WORKERS", "4"))
+DEFAULT_MAX_LENGTH = 512
+DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE = 1
+DEFAULT_GRADIENT_ACCUMULATION_STEPS = 8
+DEFAULT_NUM_TRAIN_EPOCHS = 1.0
+DEFAULT_LEARNING_RATE = 2e-4
+DEFAULT_LORA_RANK = 16
+DEFAULT_LOGGING_STEPS = 1
+DEFAULT_SAVE_STEPS = 100
+DEFAULT_SAVE_TOTAL_LIMIT = 3
+DEFAULT_WARMUP_RATIO = 0.03
+DEFAULT_DATALOADER_NUM_WORKERS = 4
 
 
 def _rocm_supports_bf16() -> bool:
@@ -187,7 +170,7 @@ def load_model(model_name: str, tokenizer):
     return model
 
 
-def attach_lora(model):
+def attach_lora(model, model_name: str, lora_rank: int):
     target_modules = [
         "q_proj",
         "k_proj",
@@ -199,13 +182,13 @@ def attach_lora(model):
     ]
 
     peft_config = LoraConfig(
-        r=LORA_RANK,
-        lora_alpha=LORA_RANK * 2,
+        r=lora_rank,
+        lora_alpha=lora_rank * 2,
         lora_dropout=0.05,
         bias="none",
         task_type=TaskType.CAUSAL_LM,
         target_modules=target_modules,
-        base_model_name_or_path=MODEL_NAME,
+        base_model_name_or_path=model_name,
     )
 
     model = get_peft_model(model, peft_config)
@@ -235,14 +218,14 @@ def format_messages_with_template(messages, tokenizer) -> str:
     return "\n".join(parts)
 
 
-def tokenize_dataset(dataset, tokenizer):
+def tokenize_dataset(dataset, tokenizer, max_length: int, train_file: Path):
     if "text" in dataset.column_names:
 
         def tokenize_fn(batch):
             return tokenizer(
                 batch["text"],
                 truncation=True,
-                max_length=MAX_LENGTH,
+                max_length=max_length,
                 padding=False,
             )
 
@@ -256,13 +239,13 @@ def tokenize_dataset(dataset, tokenizer):
             return tokenizer(
                 texts,
                 truncation=True,
-                max_length=MAX_LENGTH,
+                max_length=max_length,
                 padding=False,
             )
 
     else:
         raise ValueError(
-            f"Expected either 'text' or 'messages' column in {TRAIN_FILE}, "
+            f"Expected either 'text' or 'messages' column in {train_file}, "
             f"but found: {dataset.column_names}"
         )
 
@@ -275,39 +258,60 @@ def tokenize_dataset(dataset, tokenizer):
     return tokenized
 
 
-def estimate_warmup_steps(num_examples: int) -> int:
-    effective_batch = max(1, PER_DEVICE_TRAIN_BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS)
+def estimate_warmup_steps(
+    num_examples: int,
+    per_device_train_batch_size: int,
+    gradient_accumulation_steps: int,
+    num_train_epochs: float,
+    warmup_ratio: float,
+) -> int:
+    effective_batch = max(1, per_device_train_batch_size * gradient_accumulation_steps)
     steps_per_epoch = max(1, math.ceil(num_examples / effective_batch))
-    total_steps = max(1, math.ceil(steps_per_epoch * NUM_TRAIN_EPOCHS))
-    return max(1, int(total_steps * WARMUP_RATIO))
+    total_steps = max(1, math.ceil(steps_per_epoch * num_train_epochs))
+    return max(1, int(total_steps * warmup_ratio))
 
 
-def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, warmup_steps: int):
+def make_training_arguments(
+    *,
+    output_dir: Path,
+    use_bf16: bool,
+    use_fp16: bool,
+    warmup_steps: int,
+    per_device_train_batch_size: int,
+    gradient_accumulation_steps: int,
+    num_train_epochs: float,
+    learning_rate: float,
+    gradient_checkpointing: bool,
+    logging_steps: int,
+    save_steps: int,
+    save_total_limit: int,
+    dataloader_num_workers: int,
+):
     kwargs = dict(
         output_dir=str(output_dir),
-        per_device_train_batch_size=PER_DEVICE_TRAIN_BATCH_SIZE,
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS,
-        num_train_epochs=NUM_TRAIN_EPOCHS,
-        learning_rate=LEARNING_RATE,
+        per_device_train_batch_size=per_device_train_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        num_train_epochs=num_train_epochs,
+        learning_rate=learning_rate,
         lr_scheduler_type="cosine",
         warmup_steps=warmup_steps,
         optim=training_optimizer(),
         bf16=use_bf16,
         fp16=use_fp16,
-        gradient_checkpointing=GRADIENT_CHECKPOINTING,
+        gradient_checkpointing=gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
         logging_strategy="steps",
-        logging_steps=LOGGING_STEPS,
+        logging_steps=logging_steps,
         save_strategy="steps",
-        save_steps=SAVE_STEPS,
+        save_steps=save_steps,
         eval_strategy="no",
         report_to="none",
         log_level="info",
         logging_first_step=True,
-        save_total_limit=SAVE_TOTAL_LIMIT,
+        save_total_limit=save_total_limit,
         remove_unused_columns=False,
         dataloader_pin_memory=True,
-        dataloader_num_workers=DATALOADER_NUM_WORKERS,
+        dataloader_num_workers=dataloader_num_workers,
         disable_tqdm=True,
     )
 
@@ -326,26 +330,72 @@ def make_training_arguments(output_dir: Path, use_bf16: bool, use_fp16: bool, wa
     return TrainingArguments(**kwargs)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train a LoRA adapter on GPU.")
+    parser.add_argument("--model-name", default=BASE_MODEL)
+    parser.add_argument("--train-file", default=str(TRAIN_FILE))
+    parser.add_argument("--output-dir", default=str(LORA_DIR))
+    parser.add_argument("--max-length", type=int, default=DEFAULT_MAX_LENGTH)
+    parser.add_argument(
+        "--per-device-train-batch-size",
+        type=int,
+        default=DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
+    )
+    parser.add_argument(
+        "--gradient-accumulation-steps",
+        type=int,
+        default=DEFAULT_GRADIENT_ACCUMULATION_STEPS,
+    )
+    parser.add_argument(
+        "--num-train-epochs",
+        type=float,
+        default=DEFAULT_NUM_TRAIN_EPOCHS,
+    )
+    parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
+    parser.add_argument("--lora-rank", type=int, default=DEFAULT_LORA_RANK)
+    parser.add_argument("--logging-steps", type=int, default=DEFAULT_LOGGING_STEPS)
+    parser.add_argument("--save-steps", type=int, default=DEFAULT_SAVE_STEPS)
+    parser.add_argument("--save-total-limit", type=int, default=DEFAULT_SAVE_TOTAL_LIMIT)
+    parser.add_argument("--warmup-ratio", type=float, default=DEFAULT_WARMUP_RATIO)
+    parser.add_argument(
+        "--dataloader-num-workers",
+        type=int,
+        default=DEFAULT_DATALOADER_NUM_WORKERS,
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = parse_args()
     configure_gpu_backend()
     print_gpu_debug()
 
-    train_path = Path(TRAIN_FILE)
+    train_path = Path(args.train_file).expanduser()
     if not train_path.exists():
         raise FileNotFoundError(f"Training file not found: {train_path}")
 
-    output_dir = Path(OUTPUT_DIR)
+    output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    tokenizer = load_tokenizer(MODEL_NAME)
-    model = load_model(MODEL_NAME, tokenizer)
-    model = attach_lora(model)
+    tokenizer = load_tokenizer(args.model_name)
+    model = load_model(args.model_name, tokenizer)
+    model = attach_lora(model, args.model_name, args.lora_rank)
 
     first_param = next(model.parameters())
     print(f"Verifying model device: {first_param.device}")
 
-    dataset = load_train_dataset(TRAIN_FILE)
-    tokenized_dataset = tokenize_dataset(dataset, tokenizer)
+    dataset = load_train_dataset(str(train_path))
+    tokenized_dataset = tokenize_dataset(
+        dataset=dataset,
+        tokenizer=tokenizer,
+        max_length=args.max_length,
+        train_file=train_path,
+    )
 
     first_param = next(model.parameters())
     print(f"Verifying model device: {first_param.device}")
@@ -354,13 +404,28 @@ def main() -> int:
 
     use_fp16 = False
     use_bf16 = gpu_bf16_supported()
-    warmup_steps = estimate_warmup_steps(len(tokenized_dataset))
+    warmup_steps = estimate_warmup_steps(
+        num_examples=len(tokenized_dataset),
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        num_train_epochs=args.num_train_epochs,
+        warmup_ratio=args.warmup_ratio,
+    )
 
     training_args = make_training_arguments(
         output_dir=output_dir,
         use_bf16=use_bf16,
         use_fp16=use_fp16,
         warmup_steps=warmup_steps,
+        per_device_train_batch_size=args.per_device_train_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
+        num_train_epochs=args.num_train_epochs,
+        learning_rate=args.learning_rate,
+        gradient_checkpointing=args.gradient_checkpointing,
+        logging_steps=args.logging_steps,
+        save_steps=args.save_steps,
+        save_total_limit=args.save_total_limit,
+        dataloader_num_workers=args.dataloader_num_workers,
     )
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
