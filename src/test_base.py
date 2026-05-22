@@ -2,7 +2,7 @@
 
 import argparse
 from model_runtime import load_generation_model
-from project_config import BASE_MODEL
+from project_config import BASE_MODEL, MAX_NEW_TOKENS
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=256,
+        default=MAX_NEW_TOKENS,
     )
 
     args = parser.parse_args()

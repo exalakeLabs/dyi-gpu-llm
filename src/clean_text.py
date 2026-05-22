@@ -6,17 +6,11 @@ import argparse
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from project_config import PREPARED_DIR, RAWTEXT_DIR
+
 INLINE_WHITESPACE_RE = re.compile(r"[ \t\f\v]+")
 LINE_BREAK_HYPHEN_RE = re.compile(r"(\w)-\n(\w)")
 SEPARATOR_LINE_RE = re.compile(r"[-=_*]{4,}")
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    return path
 
 
 def clean_text(text: str) -> str:
@@ -60,12 +54,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Clean text/*.txt into prepared/*.txt.")
     parser.add_argument(
         "--input-dir",
-        default=str(repo_path("text")),
+        default=str(RAWTEXT_DIR),
         help="Directory containing raw .txt files.",
     )
     parser.add_argument(
         "--output-dir",
-        default=str(repo_path("prepared")),
+        default=str(PREPARED_DIR),
         help="Directory for cleaned .txt files.",
     )
     return parser.parse_args()

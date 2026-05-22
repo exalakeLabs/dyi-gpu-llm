@@ -10,11 +10,14 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import __version__ as TRANSFORMERS_VERSION
 
-DEFAULT_MODEL_PATH = "/home/alex2/pretrain/output_partial"
-DEFAULT_BACKEND = "cuda:0"
-DEFAULT_ATTENTION = "auto"
-DEFAULT_DTYPE = "auto"
-DEFAULT_SYSTEM_PROMPT = "You are a concise assistant."
+from project_config import (
+    DEFAULT_ATTENTION,
+    DEFAULT_BACKEND,
+    DEFAULT_DTYPE,
+    DEFAULT_MODEL_PATH,
+    MAX_NEW_TOKENS,
+    SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT,
+)
 
 _DTYPES = {
     "bf16": torch.bfloat16,
@@ -311,7 +314,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=256,
+        default=MAX_NEW_TOKENS,
     )
     parser.add_argument(
         "--temperature",

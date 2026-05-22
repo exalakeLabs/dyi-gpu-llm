@@ -47,6 +47,17 @@ def train_fn(
     from peft import LoraConfig, get_peft_model
     from trl import SFTTrainer, SFTConfig
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    from project_config import (
+        DEFAULT_DATALOADER_NUM_WORKERS,
+        DEFAULT_GRADIENT_ACCUMULATION_STEPS,
+        DEFAULT_LEARNING_RATE,
+        DEFAULT_LOGGING_STEPS,
+        DEFAULT_LORA_RANK,
+        DEFAULT_MAX_LENGTH,
+        DEFAULT_NUM_TRAIN_EPOCHS,
+        DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
+        DEFAULT_SAVE_STEPS,
+    )
 
     rank = int(os.environ.get("RANK", "0"))
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
@@ -76,8 +87,8 @@ def train_fn(
     )
 
     peft_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
+        r=DEFAULT_LORA_RANK,
+        lora_alpha=DEFAULT_LORA_RANK * 2,
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
@@ -99,13 +110,13 @@ def train_fn(
 
     args = SFTConfig(
         output_dir=lora_dir,
-        learning_rate=1e-5,
-        per_device_train_batch_size=8,
-        gradient_accumulation_steps=2,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_steps=50,
-        max_length=384,
+        learning_rate=DEFAULT_LEARNING_RATE,
+        per_device_train_batch_size=DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
+        gradient_accumulation_steps=DEFAULT_GRADIENT_ACCUMULATION_STEPS,
+        num_train_epochs=DEFAULT_NUM_TRAIN_EPOCHS,
+        logging_steps=DEFAULT_LOGGING_STEPS,
+        save_steps=DEFAULT_SAVE_STEPS,
+        max_length=DEFAULT_MAX_LENGTH,
         packing=False,
         **precision,
         max_grad_norm=0.3,
@@ -115,7 +126,7 @@ def train_fn(
         # warnings without this flag.
         ddp_find_unused_parameters=False,
         report_to="none",
-        dataloader_num_workers=4,
+        dataloader_num_workers=DEFAULT_DATALOADER_NUM_WORKERS,
         dataloader_pin_memory=True,
     )
 

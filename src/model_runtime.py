@@ -5,7 +5,7 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import __version__ as _tf_version
 
-from project_config import ADAPTER_DIR, BASE_MODEL
+from project_config import ADAPTER_DIR, BASE_MODEL, MAX_NEW_TOKENS
 
 # transformers ≥ 4.51 renamed the from_pretrained dtype kwarg from
 # `torch_dtype` to `dtype`; older builds silently ignore `dtype`.
@@ -138,7 +138,7 @@ def chat_inputs(tokenizer, model, messages):
 def generate_text(tokenizer, model, messages, **generate_kwargs) -> str:
     inputs = chat_inputs(tokenizer, model, messages)
     defaults = {
-        "max_new_tokens": 180,
+        "max_new_tokens": MAX_NEW_TOKENS,
         "do_sample": False,
         "repetition_penalty": 1.15,
         "pad_token_id": tokenizer.eos_token_id,

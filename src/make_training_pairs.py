@@ -8,28 +8,7 @@ import re
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
-START_MARKERS = [
-    "START OF THE PROJECT GUTENBERG EBOOK",
-    "START OF THIS PROJECT GUTENBERG EBOOK",
-    "*** START OF THE PROJECT GUTENBERG EBOOK",
-    "*** START OF THIS PROJECT GUTENBERG EBOOK",
-]
-
-END_MARKERS = [
-    "END OF THE PROJECT GUTENBERG EBOOK",
-    "END OF THIS PROJECT GUTENBERG EBOOK",
-    "*** END OF THE PROJECT GUTENBERG EBOOK",
-    "*** END OF THIS PROJECT GUTENBERG EBOOK",
-]
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    return path
+from project_config import CORPUS_DIR, END_MARKERS, PREPARED_DIR, START_MARKERS
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
@@ -37,17 +16,17 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--text-dir",
-        default=str(repo_path("prepared")),
+        default=str(PREPARED_DIR),
         help="Directory containing .txt files",
     )
     p.add_argument(
         "--output-train",
-        default=str(repo_path("data/train.jsonl")),
+        default=str(CORPUS_DIR / "train.jsonl"),
         help="Output JSONL for training split",
     )
     p.add_argument(
         "--output-val",
-        default=str(repo_path("data/gutenberg_val.jsonl")),
+        default=str(CORPUS_DIR / "gutenberg_val.jsonl"),
         help="Output JSONL for validation split",
     )
     p.add_argument(

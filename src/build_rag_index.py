@@ -7,18 +7,16 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+from project_config import (
+    BATCH_SIZE,
+    CHUNK_SIZE_CHARS,
+    EMBED_MODEL,
+    OVERLAP_CHARS,
+    PREPARED_DIR,
+    RAG_DIR,
+)
 
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    return path
-
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-
-def chunk_text(text: str, max_chars: int = 1200, overlap: int = 150):
+def chunk_text(text: str, max_chars: int = CHUNK_SIZE_CHARS, overlap: int = OVERLAP_CHARS):
     text = text.strip()
     if not text:
         return
@@ -52,12 +50,12 @@ def load_chunks(prepared_dir: Path, max_chars: int, overlap: int):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a FAISS RAG index from prepared text files.")
-    parser.add_argument("--prepared-dir", default=str(repo_path("prepared")))
-    parser.add_argument("--rag-dir", default=str(repo_path("rag")))
+    parser.add_argument("--prepared-dir", default=str(PREPARED_DIR))
+    parser.add_argument("--rag-dir", default=str(RAG_DIR))
     parser.add_argument("--embed-model", default=EMBED_MODEL)
-    parser.add_argument("--chunk-max-chars", type=int, default=1200)
-    parser.add_argument("--chunk-overlap", type=int, default=150)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--chunk-max-chars", type=int, default=CHUNK_SIZE_CHARS)
+    parser.add_argument("--chunk-overlap", type=int, default=OVERLAP_CHARS)
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     return parser.parse_args()
 
 

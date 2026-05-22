@@ -11,14 +11,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    return path
+from project_config import PDF_DIR, RAWTEXT_DIR
 
 
 def extract_pdf_to_text(pdf_path: Path) -> str:
@@ -46,8 +39,8 @@ def extract_pdf_to_text(pdf_path: Path) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pdf-dir", default=str(repo_path("pdfs")))
-    ap.add_argument("--text-dir", default=str(repo_path("text")))
+    ap.add_argument("--pdf-dir", default=str(PDF_DIR))
+    ap.add_argument("--text-dir", default=str(RAWTEXT_DIR))
     args = ap.parse_args()
 
     pdf_dir = Path(args.pdf_dir)

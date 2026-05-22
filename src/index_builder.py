@@ -27,25 +27,18 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-
-
-DEFAULT_EMBED_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
-DEFAULT_SYSTEM_PROMPT = (
-    "You are a careful Tolkien lore assistant. Use the retrieved canon context "
-    "carefully, distinguish certainty from inference, and avoid inventing details."
+from project_config import (
+    BATCH_SIZE,
+    CHUNK_SIZE_CHARS,
+    EMBED_MODEL as DEFAULT_EMBED_MODEL,
+    END_MARKERS,
+    OVERLAP_CHARS,
+    PREPARED_DIR,
+    RAG_DIR,
+    START_MARKERS,
+    SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT,
 )
-START_MARKERS = [
-    "START OF THE PROJECT GUTENBERG EBOOK",
-    "START OF THIS PROJECT GUTENBERG EBOOK",
-    "*** START OF THE PROJECT GUTENBERG EBOOK",
-    "*** START OF THIS PROJECT GUTENBERG EBOOK",
-]
-END_MARKERS = [
-    "END OF THE PROJECT GUTENBERG EBOOK",
-    "END OF THIS PROJECT GUTENBERG EBOOK",
-    "*** END OF THE PROJECT GUTENBERG EBOOK",
-    "*** END OF THIS PROJECT GUTENBERG EBOOK",
-]
+
 SECTION_HEADING_RE = re.compile(
     r"^(?P<heading>(?:BOOK|PART|CHAPTER|APPENDIX)\b[\w .,'’:-]*|[IVXLCDM]+\.\s+.+)$",
     re.IGNORECASE,
@@ -165,8 +158,8 @@ def choose_chunk_end(text: str, start: int, target_end: int, min_end: int, max_e
 
 def chunk_text(
     text: str,
-    chunk_size_chars: int = 1800,
-    overlap_chars: int = 250,
+    chunk_size_chars: int = CHUNK_SIZE_CHARS,
+    overlap_chars: int = OVERLAP_CHARS,
     min_chunk_chars: int = 120,
 ) -> List[TextChunk]:
     text = clean_text(text).strip()
@@ -211,7 +204,7 @@ def chunk_text(
 def embed_texts(
     model: SentenceTransformer,
     texts: List[str],
-    batch_size: int = 32,
+    batch_size: int = BATCH_SIZE,
 ) -> np.ndarray:
     embeddings = model.encode(
         texts,
@@ -303,13 +296,21 @@ def main():
             "lore Q/A generation and verification."
         )
     )
-    parser.add_argument("--input-dir", required=True, help="Directory containing .txt books")
-    parser.add_argument("--output-dir", required=True, help="Directory for FAISS index + metadata")
+    parser.add_argument(
+        "--input-dir",
+        default=str(PREPARED_DIR),
+        help="Directory containing .txt books",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(RAG_DIR),
+        help="Directory for FAISS index + metadata",
+    )
     parser.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL)
-    parser.add_argument("--chunk-size-chars", type=int, default=1800)
-    parser.add_argument("--overlap-chars", type=int, default=250)
+    parser.add_argument("--chunk-size-chars", type=int, default=CHUNK_SIZE_CHARS)
+    parser.add_argument("--overlap-chars", type=int, default=OVERLAP_CHARS)
     parser.add_argument("--min-chunk-chars", type=int, default=120)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--max-files", type=int, default=0, help="0 = all files")
     parser.add_argument(
         "--no-strip-gutenberg",

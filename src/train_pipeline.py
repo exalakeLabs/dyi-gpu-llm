@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent
-#MAKE_PAIRS = ROOT / "make_training_pairs.py"
 TRAIN_GPU = ROOT / "train_lora_gpu.py"
 TRAIN_CPU = ROOT / "train_lora_cpu.py"
 

@@ -74,31 +74,32 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
-# ============================================================
-# Runtime defaults
-# ============================================================
-
-DEFAULT_MODEL = "Qwen/Qwen2.5-3B"
-DEFAULT_CORPUS_DIR = "./corpus"
-DEFAULT_TRAIN_FILE = "train.jsonl"
-DEFAULT_EVAL_FILE = "eval.jsonl"
-DEFAULT_OUTPUT_DIR = "~/pretrain/output_partial"
-DEFAULT_SAVE_STEPS = 250
-DEFAULT_NUM_TRAIN_EPOCHS = 1
-DEFAULT_LEARNING_RATE = 2e-6
-DEFAULT_WEIGHT_DECAY = 0.01
-DEFAULT_WARMUP_RATIO = 0.03
-DEFAULT_LR_SCHEDULER_TYPE = "cosine"
-DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE = 8
-DEFAULT_GRADIENT_ACCUMULATION_STEPS = 128
-DEFAULT_PER_DEVICE_EVAL_BATCH_SIZE = 1
-DEFAULT_TRAIN_LAST_N_LAYERS = 8
-DEFAULT_DTYPE = "auto"
-DEFAULT_ATTENTION = "auto"
-DEFAULT_DEVICE_MAP = "auto"
-DEFAULT_OPTIM = "adamw_torch_fused"
-DEFAULT_DATALOADER_NUM_WORKERS = 8
-DEFAULT_FLOAT32_MATMUL_PRECISION = "high"
+from project_config import (
+    DEFAULT_ATTENTION,
+    DEFAULT_CORPUS_DIR,
+    DEFAULT_DATALOADER_NUM_WORKERS,
+    DEFAULT_DEVICE_MAP,
+    DEFAULT_DTYPE,
+    DEFAULT_EVAL_FILE,
+    DEFAULT_FLOAT32_MATMUL_PRECISION,
+    DEFAULT_GRADIENT_ACCUMULATION_STEPS,
+    DEFAULT_LEARNING_RATE,
+    DEFAULT_LR_SCHEDULER_TYPE,
+    DEFAULT_MODEL,
+    DEFAULT_NUM_TRAIN_EPOCHS,
+    DEFAULT_OPTIM,
+    DEFAULT_OUTPUT_DIR,
+    DEFAULT_PER_DEVICE_EVAL_BATCH_SIZE,
+    DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
+    DEFAULT_SAVE_STEPS,
+    DEFAULT_SAVE_TOTAL_LIMIT,
+    DEFAULT_TRAIN_FILE,
+    DEFAULT_TRAIN_LAST_N_LAYERS,
+    DEFAULT_WARMUP_RATIO,
+    DEFAULT_WEIGHT_DECAY,
+    DEFAULT_LOGGING_STEPS,
+    MAX_NEW_TOKENS,
+)
 
 # Good alternatives:
 # "mistralai/Mistral-7B-v0.1"
@@ -322,7 +323,7 @@ def freeze_lower_layers(model, train_last_n_layers=8):
 # ============================================================
 
 @torch.no_grad()
-def run_eval(model, tokenizer, prompts, max_new_tokens=128):
+def run_eval(model, tokenizer, prompts, max_new_tokens=MAX_NEW_TOKENS):
 
     model.eval()
 
@@ -423,8 +424,8 @@ def make_training_arguments(
     gradient_accumulation_steps=DEFAULT_GRADIENT_ACCUMULATION_STEPS,
     requested_save_steps=DEFAULT_SAVE_STEPS,
     eval_steps=None,
-    save_total_limit=2,
-    logging_steps=1,
+    save_total_limit=DEFAULT_SAVE_TOTAL_LIMIT,
+    logging_steps=DEFAULT_LOGGING_STEPS,
     dtype=torch.bfloat16,
     tf32=True,
     gradient_checkpointing=True,
@@ -682,13 +683,13 @@ def main():
     parser.add_argument(
         "--save_total_limit",
         type=int,
-        default=2,
+        default=DEFAULT_SAVE_TOTAL_LIMIT,
     )
 
     parser.add_argument(
         "--logging_steps",
         type=int,
-        default=1,
+        default=DEFAULT_LOGGING_STEPS,
     )
 
     parser.add_argument(
@@ -723,7 +724,7 @@ def main():
     parser.add_argument(
         "--eval_max_new_tokens",
         type=int,
-        default=128,
+        default=MAX_NEW_TOKENS,
     )
 
     args = parser.parse_args()

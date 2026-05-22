@@ -3,14 +3,7 @@
 import argparse
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    return path
+from project_config import PDF_DIR, RAWTEXT_DIR
 
 
 from pypdf import PdfReader
@@ -45,8 +38,8 @@ def extract_pdf(pdf_path):
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Extract text from PDFs.")
-    parser.add_argument("--pdf-dir", default=str(repo_path("pdfs")))
-    parser.add_argument("--text-dir", default=str(repo_path("text")))
+    parser.add_argument("--pdf-dir", default=str(PDF_DIR))
+    parser.add_argument("--text-dir", default=str(RAWTEXT_DIR))
     return parser.parse_args()
 
 

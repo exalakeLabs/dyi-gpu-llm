@@ -21,25 +21,27 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 
 from model_runtime import is_rocm, patch_rocm_isin
-from project_config import BASE_MODEL, LORA_DIR, TRAIN_FILE
+from project_config import (
+    BASE_MODEL,
+    DEFAULT_DATALOADER_NUM_WORKERS,
+    DEFAULT_GRADIENT_ACCUMULATION_STEPS,
+    DEFAULT_LEARNING_RATE,
+    DEFAULT_LOGGING_STEPS,
+    DEFAULT_LORA_RANK,
+    DEFAULT_MAX_LENGTH,
+    DEFAULT_NUM_TRAIN_EPOCHS,
+    DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
+    DEFAULT_SAVE_STEPS,
+    DEFAULT_SAVE_TOTAL_LIMIT,
+    DEFAULT_WARMUP_RATIO,
+    LORA_DIR,
+    TRAIN_FILE,
+)
 
 transformers.logging.set_verbosity_info()
 
 # "cuda" | "rocm" — set by configure_gpu_backend() in main()
 GPU_BACKEND: str = "none"
-
-DEFAULT_MAX_LENGTH = 512
-DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE = 1
-DEFAULT_GRADIENT_ACCUMULATION_STEPS = 8
-DEFAULT_NUM_TRAIN_EPOCHS = 1.0
-DEFAULT_LEARNING_RATE = 2e-4
-DEFAULT_LORA_RANK = 16
-DEFAULT_LOGGING_STEPS = 1
-DEFAULT_SAVE_STEPS = 100
-DEFAULT_SAVE_TOTAL_LIMIT = 3
-DEFAULT_WARMUP_RATIO = 0.03
-DEFAULT_DATALOADER_NUM_WORKERS = 4
-
 
 def _rocm_supports_bf16() -> bool:
     """Native bf16 on CDNA2/CDNA3 and RDNA3 (mirrors model_runtime)."""

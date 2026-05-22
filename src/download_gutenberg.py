@@ -9,18 +9,12 @@ import requests
 
 try:
     import truststore
+
     truststore.inject_into_ssl()
 except ModuleNotFoundError:
     pass
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-
-
-def repo_path(path: str | Path) -> Path:
-    path = Path(path).expanduser()
-    if not path.is_absolute():
-        path = REPO_ROOT / path
-    return path
+from project_config import RAWTEXT_DIR
 
 API_BASE = "https://gutendex.com/books"
 
@@ -78,7 +72,7 @@ def main():
     parser.add_argument("--max-books", type=int, default=20, help="Maximum number of books to download")
     parser.add_argument(
         "--output-dir",
-        default=str(repo_path("text")),
+        default=str(RAWTEXT_DIR),
         help="Directory for downloaded .txt files.",
     )
     args = parser.parse_args()

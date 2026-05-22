@@ -10,7 +10,21 @@ from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer, SFTConfig
 
 from model_runtime import load_base_model, load_tokenizer
-from project_config import ADAPTER_DIR, BASE_MODEL, LORA_DIR, TRAIN_FILE
+from project_config import (
+    ADAPTER_DIR,
+    BASE_MODEL,
+    DEFAULT_DATALOADER_NUM_WORKERS,
+    DEFAULT_GRADIENT_ACCUMULATION_STEPS,
+    DEFAULT_LEARNING_RATE,
+    DEFAULT_LOGGING_STEPS,
+    DEFAULT_LORA_RANK,
+    DEFAULT_MAX_LENGTH,
+    DEFAULT_NUM_TRAIN_EPOCHS,
+    DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
+    DEFAULT_SAVE_STEPS,
+    LORA_DIR,
+    TRAIN_FILE,
+)
 
 
 def print_device_info(model) -> None:
@@ -27,8 +41,8 @@ def print_device_info(model) -> None:
 
 def prepare_lora_model(model):
     peft_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=DEFAULT_LORA_RANK,
+        lora_alpha=DEFAULT_LORA_RANK * 2,
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
@@ -53,19 +67,19 @@ def prepare_lora_model(model):
 def build_trainer(model, tokenizer, dataset, lora_dir: Path):
     args = SFTConfig(
         output_dir=str(lora_dir),
-        learning_rate=1e-5,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,
-        num_train_epochs=1,
-        logging_steps=1,
-        save_steps=50,
-        max_length=192,
+        learning_rate=DEFAULT_LEARNING_RATE,
+        per_device_train_batch_size=DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
+        gradient_accumulation_steps=DEFAULT_GRADIENT_ACCUMULATION_STEPS,
+        num_train_epochs=DEFAULT_NUM_TRAIN_EPOCHS,
+        logging_steps=DEFAULT_LOGGING_STEPS,
+        save_steps=DEFAULT_SAVE_STEPS,
+        max_length=DEFAULT_MAX_LENGTH,
         fp16=False,
         bf16=False,
         max_grad_norm=0.3,
         average_tokens_across_devices=False,
         report_to="none",
-        dataloader_num_workers=0,
+        dataloader_num_workers=DEFAULT_DATALOADER_NUM_WORKERS,
         dataloader_pin_memory=False,
         # Force CPU training
         use_cpu=True,

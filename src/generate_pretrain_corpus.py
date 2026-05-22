@@ -35,16 +35,17 @@ from pathlib import Path
 from datasets import Dataset
 from transformers import AutoTokenizer
 
-
-DEFAULT_MODEL = "Qwen/Qwen2.5-3B"
-DEFAULT_TEXT_DIR = "./prepared"
-DEFAULT_CORPUS_DIR = "./corpus"
-DEFAULT_SEQ_LEN = 2048
-DEFAULT_DATASET_NUM_PROC = 1
-DEFAULT_TOKENIZE_BATCH_SIZE = 128
-DEFAULT_EVAL_RATIO = 0.01
-DEFAULT_SEED = 42
-DEFAULT_MIN_CHARS = 1000
+from project_config import (
+    DEFAULT_CORPUS_DIR,
+    DEFAULT_DATASET_NUM_PROC,
+    DEFAULT_EVAL_RATIO,
+    DEFAULT_MIN_CHARS,
+    DEFAULT_MODEL,
+    DEFAULT_SEED,
+    DEFAULT_SEQ_LEN,
+    DEFAULT_TEXT_DIR,
+    DEFAULT_TOKENIZE_BATCH_SIZE,
+)
 
 
 def resolve_num_proc(dataset_num_proc: int) -> int:

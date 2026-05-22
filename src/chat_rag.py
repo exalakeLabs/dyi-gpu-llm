@@ -8,11 +8,15 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from model_runtime import generate_text, load_generation_model
-from project_config import ADAPTER_DIR, BASE_MODEL, repo_path
-
-
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-TOP_K = 4
+from project_config import (
+    ADAPTER_DIR,
+    BASE_MODEL,
+    EMBED_MODEL,
+    MAX_NEW_TOKENS,
+    RAG_DIR,
+    RETRIEVE_K,
+    SYSTEM_PROMPT,
+)
 
 
 def load_chunks(chunks_file: Path):
@@ -23,7 +27,7 @@ def load_chunks(chunks_file: Path):
     return rows
 
 
-def retrieve(query, embedder, index, rows, top_k=TOP_K):
+def retrieve(query, embedder, index, rows, top_k=RETRIEVE_K):
     q = embedder.encode([query], normalize_embeddings=True)
     q = np.asarray(q, dtype="float32")
     scores, ids = index.search(q, top_k)
@@ -51,12 +55,14 @@ def format_context(hits):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Chat with a local FAISS RAG index.")
-    parser.add_argument("--rag-dir", default=str(repo_path("rag")))
+    parser.add_argument("--rag-dir", default=str(RAG_DIR))
     parser.add_argument("--base-model", default=BASE_MODEL)
     parser.add_argument("--adapter-dir", default=str(ADAPTER_DIR))
     parser.add_argument("--no-adapter", action="store_true")
     parser.add_argument("--embed-model", default=EMBED_MODEL)
-    parser.add_argument("--top-k", type=int, default=TOP_K)
+    parser.add_argument("--top-k", type=int, default=RETRIEVE_K)
+    parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
+    parser.add_argument("--system-prompt", default=SYSTEM_PROMPT)
     args = parser.parse_args()
 
     rag_dir = Path(args.rag_dir).expanduser()
@@ -72,13 +78,6 @@ def main() -> int:
         base_model=args.base_model,
         adapter_path=adapter_dir,
         use_adapter=not args.no_adapter and adapter_dir.exists(),
-    )
-
-    system_prompt = (
-        "You are a grounded assistant. Answer only using the provided context from the local document corpus. "
-        "If the answer is not clearly supported by the context, say: "
-        "'I don't know based on the provided documents.' "
-        "Do not use outside knowledge."
     )
 
     while True:
@@ -100,7 +99,7 @@ def main() -> int:
         )
 
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": args.system_prompt},
             {"role": "user", "content": user_prompt},
         ]
 
@@ -108,7 +107,7 @@ def main() -> int:
             tokenizer,
             model,
             messages,
-            max_new_tokens=120,
+            max_new_tokens=args.max_new_tokens,
             do_sample=False,
             repetition_penalty=1.2,
             no_repeat_ngram_size=4,

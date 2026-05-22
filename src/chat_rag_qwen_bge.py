@@ -15,9 +15,16 @@ from transformers import (
     AutoTokenizer,
 )
 
-DEFAULT_GENERATOR = "Qwen/Qwen2.5-7B-Instruct"
-DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
-DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
+from project_config import (
+    EMBED_MODEL as DEFAULT_EMBED_MODEL,
+    GENERATOR_MODEL as DEFAULT_GENERATOR,
+    MAX_NEW_TOKENS,
+    RAG_DIR,
+    RERANK_TOP_N,
+    RERANKER_MODEL as DEFAULT_RERANKER,
+    RETRIEVE_K,
+    SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT,
+)
 
 def load_chunks(path: Path) -> List[Dict[str, Any]]:
     rows = []
@@ -104,17 +111,13 @@ def generate_answer(
     gen_tokenizer,
     gen_model,
     device: str,
-    max_new_tokens: int = 500,
+    max_new_tokens: int = MAX_NEW_TOKENS,
+    system_prompt: str = DEFAULT_SYSTEM_PROMPT,
 ):
     messages = [
         {
             "role": "system",
-            "content": (
-                "You are a careful literary research assistant. "
-                "Answer using only the retrieved passages when possible. "
-                "If the passages are insufficient, say so clearly. "
-                "Cite passage numbers like [1], [2]."
-            ),
+            "content": system_prompt,
         },
         {
             "role": "user",
@@ -148,13 +151,14 @@ def generate_answer(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--index-dir", required=True)
+    parser.add_argument("--index-dir", default=str(RAG_DIR))
     parser.add_argument("--generator-model", default=DEFAULT_GENERATOR)
     parser.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL)
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER)
-    parser.add_argument("--retrieve-k", type=int, default=24)
-    parser.add_argument("--rerank-top-n", type=int, default=6)
-    parser.add_argument("--max-new-tokens", type=int, default=500)
+    parser.add_argument("--retrieve-k", type=int, default=RETRIEVE_K)
+    parser.add_argument("--rerank-top-n", type=int, default=RERANK_TOP_N)
+    parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
+    parser.add_argument("--system-prompt", default=DEFAULT_SYSTEM_PROMPT)
     args = parser.parse_args()
 
     index_dir = Path(args.index_dir).expanduser().resolve()
@@ -230,6 +234,7 @@ def main():
             gen_model=gen_model,
             device=device,
             max_new_tokens=args.max_new_tokens,
+            system_prompt=args.system_prompt,
         )
 
         print("\nAssistant>\n")
