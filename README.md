@@ -60,7 +60,7 @@ The partial continued-pretraining path is split into two stages. First build the
 packed token corpus from `prepared/`:
 
 ```bash
-python3 src/generate_pretrain_corpus.py --text_dir prepared --corpus_dir corpus
+python3 src/generate_pretrain_corpus.py --text_dir prepared --corpus_dir corpus --num_proc 1
 ```
 
 Then train from the token JSONL files in `corpus/`:

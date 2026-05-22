@@ -33,7 +33,8 @@ Step 1, generate packed token JSONL:
 python src/generate_pretrain_corpus.py \
     --text_dir ./prepared \
     --corpus_dir ./corpus \
-    --seq_len 2048
+    --seq_len 2048 \
+    --num_proc 1
 
 Step 2, train from the packed corpus:
 

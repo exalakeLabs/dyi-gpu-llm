@@ -21,7 +21,8 @@ python src/generate_pretrain_corpus.py \
     --text_dir ./prepared \
     --corpus_dir ./corpus \
     --model_name Qwen/Qwen2.5-3B \
-    --seq_len 2048
+    --seq_len 2048 \
+    --num_proc 1
 """
 
 from __future__ import annotations
@@ -39,7 +40,8 @@ DEFAULT_MODEL = "Qwen/Qwen2.5-3B"
 DEFAULT_TEXT_DIR = "./prepared"
 DEFAULT_CORPUS_DIR = "./corpus"
 DEFAULT_SEQ_LEN = 2048
-DEFAULT_DATASET_NUM_PROC = 0
+DEFAULT_DATASET_NUM_PROC = 1
+DEFAULT_TOKENIZE_BATCH_SIZE = 128
 DEFAULT_EVAL_RATIO = 0.01
 DEFAULT_SEED = 42
 DEFAULT_MIN_CHARS = 1000
@@ -82,9 +84,11 @@ def tokenize_and_pack_dataset(
     tokenizer,
     seq_len: int,
     dataset_num_proc: int,
+    tokenize_batch_size: int,
 ) -> Dataset:
     print("\nTokenizing dataset...\n")
     num_proc = resolve_num_proc(dataset_num_proc)
+    print(f"Using num_proc={num_proc}, tokenize_batch_size={tokenize_batch_size}\n")
 
     def tokenize(batch):
         return tokenizer(
@@ -95,6 +99,7 @@ def tokenize_and_pack_dataset(
     tokenized = dataset.map(
         tokenize,
         batched=True,
+        batch_size=tokenize_batch_size,
         remove_columns=["text"],
         num_proc=num_proc,
     )
@@ -251,9 +256,18 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--dataset_num_proc",
+        "--num_proc",
+        dest="dataset_num_proc",
         type=int,
         default=DEFAULT_DATASET_NUM_PROC,
         help="Tokenization/packing process count. 0 means half of available CPUs.",
+    )
+
+    parser.add_argument(
+        "--tokenize_batch_size",
+        type=int,
+        default=DEFAULT_TOKENIZE_BATCH_SIZE,
+        help="Documents per tokenizer batch. Lower this if tokenization is killed for memory.",
     )
 
     return parser.parse_args()
@@ -278,6 +292,8 @@ def main() -> int:
         raise SystemExit("--seq_len must be greater than 0")
     if args.eval_ratio <= 0 or args.eval_ratio >= 1:
         raise SystemExit("--eval_ratio must be > 0 and < 1")
+    if args.tokenize_batch_size <= 0:
+        raise SystemExit("--tokenize_batch_size must be greater than 0")
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_name,
@@ -304,6 +320,7 @@ def main() -> int:
         tokenizer,
         seq_len=args.seq_len,
         dataset_num_proc=args.dataset_num_proc,
+        tokenize_batch_size=args.tokenize_batch_size,
     )
 
     if eval_docs is None:
@@ -318,6 +335,7 @@ def main() -> int:
             tokenizer,
             seq_len=args.seq_len,
             dataset_num_proc=args.dataset_num_proc,
+            tokenize_batch_size=args.tokenize_batch_size,
         )
         train_dataset, eval_dataset = split_empty_eval_from_train(
             train_dataset,
