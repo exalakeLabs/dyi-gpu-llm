@@ -9,6 +9,7 @@ PYTHON="${PYTHON:-python3}"
 VENV_DIR="${VENV_DIR:-.venv}"
 REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-requirements.txt}"
 ENV_FILE="${ENV_FILE:-.env}"
+ENV_DEFAULT_FILE="${ENV_DEFAULT_FILE:-.env.default}"
 PROMPT_ENV="${PROMPT_ENV:-1}"
 
 # ---------------------------------------------------------------------------
@@ -33,7 +34,11 @@ Environment overrides:
   VENV_DIR           Virtual environment directory (default: .venv)
   REQUIREMENTS_FILE  Pip requirements file (default: requirements.txt)
   ENV_FILE           Environment file to update (default: .env)
-  PROMPT_ENV         Set to 0 to skip RAWTEXT_DIR/MODEL_ROOT prompts
+  ENV_DEFAULT_FILE   Template copied to ENV_FILE when missing (default: .env.default)
+  PROMPT_ENV         Set to 0 to skip prompts for literal .env defaults
+
+Options:
+  --no-env-prompt    Skip prompts for literal .env defaults
 EOF
   exit "$usage_status"
 }
@@ -114,7 +119,95 @@ set_env_var() {
   mv "$tmp_file" "$ENV_FILE"
 }
 
+constant_env_names() {
+  local env_source="${ENV_DEFAULT_FILE}"
+  local line name value
+
+  if [[ ! -f "$env_source" ]]; then
+    env_source="$ENV_FILE"
+  fi
+
+  if [[ ! -f "$env_source" ]]; then
+    return
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ "^[[:space:]]*export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)=(.*)$" ]]; then
+      name="$match[1]"
+      value="$match[2]"
+    elif [[ "$line" =~ "^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$" ]]; then
+      name="$match[1]"
+      value="$match[2]"
+    else
+      continue
+    fi
+
+    if [[ -z "$value" || "$value" == *'$'* ]]; then
+      continue
+    fi
+
+    print -r -- "$name"
+  done < "$env_source"
+}
+
+literal_env_defaults() {
+  local env_source="${ENV_DEFAULT_FILE}"
+  local line name value fallback
+
+  if [[ ! -f "$env_source" ]]; then
+    env_source="$ENV_FILE"
+  fi
+
+  if [[ ! -f "$env_source" ]]; then
+    return
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ "^[[:space:]]*export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)=(.*)$" ]]; then
+      name="$match[1]"
+      value="$match[2]"
+    elif [[ "$line" =~ "^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$" ]]; then
+      name="$match[1]"
+      value="$match[2]"
+    else
+      continue
+    fi
+
+    if [[ -z "$value" || "$value" == *'$'* ]]; then
+      continue
+    fi
+
+    fallback="$value"
+    if [[ "$fallback" == \"*\" ]]; then
+      fallback="${fallback#\"}"
+      fallback="${fallback%\"}"
+    elif [[ "$fallback" == \'*\' ]]; then
+      fallback="${fallback#\'}"
+      fallback="${fallback%\'}"
+    fi
+
+    printf '%s\t%s\n' "$name" "$fallback"
+  done < "$env_source"
+}
+
+ensure_env_file() {
+  if [[ -f "$ENV_FILE" ]]; then
+    return
+  fi
+
+  if [[ ! -f "$ENV_DEFAULT_FILE" ]]; then
+    echo "error: environment file not found: $ENV_FILE" >&2
+    echo "error: default template not found: $ENV_DEFAULT_FILE" >&2
+    exit 1
+  fi
+
+  cp "$ENV_DEFAULT_FILE" "$ENV_FILE"
+  printf 'Created %s from %s.\n' "$ENV_FILE" "$ENV_DEFAULT_FILE"
+}
+
 load_env_file() {
+  ensure_env_file
+
   if [[ -f "$ENV_FILE" ]]; then
     set -a
     source "$ENV_FILE"
@@ -156,16 +249,26 @@ configure_runtime_env() {
 
   load_env_file
 
-  printf '\n\033[1;34mRuntime paths\033[0m\n'
+  local -a prompt_defaults
+  prompt_defaults=("${(@f)$(literal_env_defaults)}")
+
+  if (( ${#prompt_defaults[@]} == 0 )); then
+    return
+  fi
+
+  printf '\n\033[1;34mEnvironment defaults\033[0m\n'
   printf 'Press Enter to keep the current value.\n\n'
-  prompt_env_var RAWTEXT_DIR "/datasets/raw-text"
-  prompt_env_var MODEL_ROOT "/datasets/model_root"
+
+  local entry name fallback
+  for entry in "$prompt_defaults[@]"; do
+    name="${entry%%	*}"
+    fallback="${entry#*	}"
+    prompt_env_var "$name" "$fallback"
+  done
 
   load_env_file
 
-  printf '\nSaved runtime paths to %s:\n' "$ENV_FILE"
-  printf '  RAWTEXT_DIR=%s\n' "$RAWTEXT_DIR"
-  printf '  MODEL_ROOT=%s\n\n' "$MODEL_ROOT"
+  printf '\nSaved environment defaults to %s.\n\n' "$ENV_FILE"
 }
 
 configure_runtime_env
@@ -186,8 +289,42 @@ fi
 # ---------------------------------------------------------------------------
 # Virtual environment + dependencies
 # ---------------------------------------------------------------------------
-"$PYTHON" -m venv "$VENV_DIR"
-source "$VENV_DIR/bin/activate"
+PYTHON_PATH="$(command -v "$PYTHON")"
+VENV_PATH="${VENV_DIR:A}"
+ROOT_PATH="${ROOT:A}"
+
+if [[ "$PYTHON_PATH" == "$VENV_PATH"/* ]]; then
+  if [[ -x /usr/bin/python3 ]]; then
+    PYTHON_PATH=/usr/bin/python3
+  else
+    echo "error: PYTHON resolves inside $VENV_DIR and /usr/bin/python3 is unavailable." >&2
+    echo "Set PYTHON to a Python executable outside the venv and retry." >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "$VENV_DIR" || "$VENV_PATH" == "/" || "$VENV_PATH" == "$ROOT_PATH" ]]; then
+  echo "error: refusing to delete unsafe VENV_DIR: $VENV_DIR" >&2
+  exit 1
+fi
+
+if [[ "$VENV_PATH" != "$ROOT_PATH"/* ]]; then
+  echo "error: refusing to delete VENV_DIR outside project root: $VENV_DIR" >&2
+  exit 1
+fi
+
+if [[ -e "$VENV_PATH" && ! -d "$VENV_PATH" ]]; then
+  echo "error: VENV_DIR exists but is not a directory: $VENV_DIR" >&2
+  exit 1
+fi
+
+if [[ -d "$VENV_PATH" ]]; then
+  printf '\033[1;33mRemoving existing virtual environment: %s\033[0m\n' "$VENV_PATH"
+  rm -rf -- "$VENV_PATH"
+fi
+
+"$PYTHON_PATH" -m venv "$VENV_PATH"
+source "$VENV_PATH/bin/activate"
 python -m pip install -U pip
 
 pip_args=(-r "$REQUIREMENTS_FILE")
