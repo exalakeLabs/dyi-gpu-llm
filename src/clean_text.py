@@ -6,7 +6,10 @@ import argparse
 import re
 from pathlib import Path
 
-from project_config import PREPARED_DIR, RAWTEXT_DIR
+from runtime_env import env_path
+
+PREPARED_DIR = env_path("PREPARED_DIR", "prepared")
+RAWTEXT_DIR = env_path("RAWTEXT_DIR", "text")
 
 INLINE_WHITESPACE_RE = re.compile(r"[ \t\f\v]+")
 LINE_BREAK_HYPHEN_RE = re.compile(r"(\w)-\n(\w)")

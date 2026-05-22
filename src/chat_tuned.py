@@ -10,14 +10,14 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import __version__ as TRANSFORMERS_VERSION
 
-from project_config import (
-    DEFAULT_ATTENTION,
-    DEFAULT_BACKEND,
-    DEFAULT_DTYPE,
-    DEFAULT_MODEL_PATH,
-    MAX_NEW_TOKENS,
-    SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT,
-)
+from runtime_env import env_int, env_str
+
+DEFAULT_ATTENTION = env_str("DEFAULT_ATTENTION", "auto")
+DEFAULT_BACKEND = env_str("DEFAULT_BACKEND", "cuda:0")
+DEFAULT_DTYPE = env_str("DEFAULT_DTYPE", "auto")
+DEFAULT_MODEL_PATH = env_str("DEFAULT_MODEL_PATH")
+DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
+MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 _DTYPES = {
     "bf16": torch.bfloat16,

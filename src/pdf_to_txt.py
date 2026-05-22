@@ -11,7 +11,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from project_config import PDF_DIR, RAWTEXT_DIR
+from runtime_env import env_path
+
+PDF_DIR = env_path("PDF_DIR", "pdfs")
+RAWTEXT_DIR = env_path("RAWTEXT_DIR", "text")
 
 
 def extract_pdf_to_text(pdf_path: Path) -> str:

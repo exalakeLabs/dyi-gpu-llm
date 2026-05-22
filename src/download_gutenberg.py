@@ -14,7 +14,9 @@ try:
 except ModuleNotFoundError:
     pass
 
-from project_config import RAWTEXT_DIR
+from runtime_env import env_path
+
+RAWTEXT_DIR = env_path("RAWTEXT_DIR", "text")
 
 API_BASE = "https://gutendex.com/books"
 

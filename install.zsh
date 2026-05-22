@@ -2,9 +2,14 @@
 set -euo pipefail
 
 ROOT="${0:A:h}"
+SCRIPT_NAME="${0:t}"
 cd "$ROOT"
 
 PYTHON="${PYTHON:-python3}"
+VENV_DIR="${VENV_DIR:-.venv}"
+REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-requirements.txt}"
+ENV_FILE="${ENV_FILE:-.env}"
+PROMPT_ENV="${PROMPT_ENV:-1}"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -12,8 +17,9 @@ PYTHON="${PYTHON:-python3}"
 BACKEND=""
 
 usage() {
+  local usage_status="${1:-1}"
   cat >&2 <<EOF
-Usage: $0 --backend <cuda|rocm|mps> [--cuda-version <ver>] [--rocm-version <ver>]
+Usage: ${SCRIPT_NAME} --backend <cuda|rocm|mps> [--cuda-version <ver>] [--rocm-version <ver>]
 
   --backend       cuda   Install PyTorch with CUDA (Nvidia)  [required]
                   rocm   Install PyTorch with ROCm (Radeon/AMD)
@@ -21,8 +27,15 @@ Usage: $0 --backend <cuda|rocm|mps> [--cuda-version <ver>] [--rocm-version <ver>
 
   --cuda-version  CUDA wheel suffix, e.g. cu124 (default: cu124)
   --rocm-version  ROCm wheel suffix, e.g. rocm6.2 (default: rocm6.2)
+
+Environment overrides:
+  PYTHON             Python executable used to create the venv (default: python3)
+  VENV_DIR           Virtual environment directory (default: .venv)
+  REQUIREMENTS_FILE  Pip requirements file (default: requirements.txt)
+  ENV_FILE           Environment file to update (default: .env)
+  PROMPT_ENV         Set to 0 to skip RAWTEXT_DIR/MODEL_ROOT prompts
 EOF
-  exit 1
+  exit "$usage_status"
 }
 
 CUDA_VERSION="cu124"
@@ -33,14 +46,15 @@ while [[ $# -gt 0 ]]; do
     --backend)        BACKEND="$2";       shift 2 ;;
     --cuda-version)   CUDA_VERSION="$2";  shift 2 ;;
     --rocm-version)   ROCM_VERSION="$2";  shift 2 ;;
-    -h|--help)        usage ;;
-    *) echo "error: unknown argument '$1'" >&2; usage ;;
+    --no-env-prompt)  PROMPT_ENV=0;       shift ;;
+    -h|--help)        usage 0 ;;
+    *) echo "error: unknown argument '$1'" >&2; usage 1 ;;
   esac
 done
 
 if [[ -z "$BACKEND" ]]; then
   echo "error: --backend is required (cuda, rocm, or mps)" >&2
-  usage
+  usage 1
 fi
 
 case "$BACKEND" in
@@ -58,11 +72,103 @@ case "$BACKEND" in
     ;;
   *)
     echo "error: --backend must be 'cuda', 'rocm', or 'mps', got '${BACKEND}'" >&2
-    usage
+    usage 1
     ;;
 esac
 
 printf '\n\033[1;34mBackend: %s\033[0m\n\n' "$BACKEND_LABEL"
+
+# ---------------------------------------------------------------------------
+# Runtime environment
+# ---------------------------------------------------------------------------
+quote_env_value() {
+  local value="$1"
+  print -r -- "${(qqq)value}"
+}
+
+set_env_var() {
+  local name="$1"
+  local value="$2"
+  local tmp_file="${ENV_FILE}.tmp.$$"
+  local found=0
+  local quoted
+  quoted="$(quote_env_value "$value")"
+
+  if [[ ! -f "$ENV_FILE" ]]; then
+    : > "$ENV_FILE"
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ "^[[:space:]]*(export[[:space:]]+)?${name}=" ]]; then
+      print -r -- "export ${name}=${quoted}" >> "$tmp_file"
+      found=1
+    else
+      print -r -- "$line" >> "$tmp_file"
+    fi
+  done < "$ENV_FILE"
+
+  if (( ! found )); then
+    print -r -- "export ${name}=${quoted}" >> "$tmp_file"
+  fi
+
+  mv "$tmp_file" "$ENV_FILE"
+}
+
+load_env_file() {
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    source "$ENV_FILE"
+    set +a
+  fi
+}
+
+prompt_env_var() {
+  local name="$1"
+  local fallback="$2"
+  local current="${(P)name-}"
+  local value
+
+  if [[ -z "$current" ]]; then
+    current="$fallback"
+  fi
+
+  printf '%s [%s]: ' "$name" "$current"
+  read -r value
+  if [[ -z "$value" ]]; then
+    value="$current"
+  fi
+
+  export "${name}=${value}"
+  set_env_var "$name" "$value"
+}
+
+configure_runtime_env() {
+  if [[ "$PROMPT_ENV" == "0" ]]; then
+    load_env_file
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    printf '\033[1;33mSkipping environment prompts because stdin is not interactive.\033[0m\n'
+    load_env_file
+    return
+  fi
+
+  load_env_file
+
+  printf '\n\033[1;34mRuntime paths\033[0m\n'
+  printf 'Press Enter to keep the current value.\n\n'
+  prompt_env_var RAWTEXT_DIR "/datasets/raw-text"
+  prompt_env_var MODEL_ROOT "/datasets/model_root"
+
+  load_env_file
+
+  printf '\nSaved runtime paths to %s:\n' "$ENV_FILE"
+  printf '  RAWTEXT_DIR=%s\n' "$RAWTEXT_DIR"
+  printf '  MODEL_ROOT=%s\n\n' "$MODEL_ROOT"
+}
+
+configure_runtime_env
 
 # ---------------------------------------------------------------------------
 # Python check
@@ -72,27 +178,24 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -f "$REQUIREMENTS_FILE" ]]; then
+  echo "error: requirements file not found: $REQUIREMENTS_FILE" >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Virtual environment + dependencies
 # ---------------------------------------------------------------------------
-"$PYTHON" -m venv .venv
-source .venv/bin/activate
+"$PYTHON" -m venv "$VENV_DIR"
+source "$VENV_DIR/bin/activate"
 python -m pip install -U pip
 
-if [[ "$BACKEND" == "mps" ]]; then
-  # Standard PyPI wheel includes MPS support; no custom index needed.
-  python -m pip install torch torchvision torchaudio \
-    || printf '\033[1;33m⚠ torchvision/torchaudio not available for this Python version — skipping.\033[0m\n'
-else
-  python -m pip install torch --extra-index-url "$TORCH_INDEX"
-  # torchvision and torchaudio may not have wheels for every Python version;
-  # skip gracefully rather than aborting the whole setup.
-  python -m pip install torchvision torchaudio --extra-index-url "$TORCH_INDEX" \
-    || printf '\033[1;33m⚠ torchvision/torchaudio not available for this Python version — skipping.\033[0m\n'
+pip_args=(-r "$REQUIREMENTS_FILE")
+if [[ -n "$TORCH_INDEX" ]]; then
+  pip_args+=(--extra-index-url "$TORCH_INDEX")
 fi
-python -m pip install pypdf cryptography datasets transformers trl peft accelerate sentencepiece requests sentence-transformers faiss-cpu fastapi uvicorn truststore
 
-python -m pip install -r requirements.txt
+python -m pip install "${pip_args[@]}"
 
 # ---------------------------------------------------------------------------
 # Environment check
@@ -127,7 +230,7 @@ PY
 printf '\n'
 printf '\033[1;32m✔ Setup complete.\033[0m\n'
 printf 'Activate the environment with:\n'
-printf '  \033[1;36msource .launch_env\033[0m\n'
+printf '  \033[1;36msource .runtime\033[0m\n'
 printf '\n'
 printf 'Then verify with:\n'
 printf '  \033[1;36mpython --version\033[0m\n'

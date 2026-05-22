@@ -47,17 +47,17 @@ def train_fn(
     from peft import LoraConfig, get_peft_model
     from trl import SFTTrainer, SFTConfig
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from project_config import (
-        DEFAULT_DATALOADER_NUM_WORKERS,
-        DEFAULT_GRADIENT_ACCUMULATION_STEPS,
-        DEFAULT_LEARNING_RATE,
-        DEFAULT_LOGGING_STEPS,
-        DEFAULT_LORA_RANK,
-        DEFAULT_MAX_LENGTH,
-        DEFAULT_NUM_TRAIN_EPOCHS,
-        DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
-        DEFAULT_SAVE_STEPS,
-    )
+    from runtime_env import env_float, env_int
+
+    default_dataloader_num_workers = env_int("DEFAULT_DATALOADER_NUM_WORKERS", 4)
+    default_gradient_accumulation_steps = env_int("DEFAULT_GRADIENT_ACCUMULATION_STEPS", 8)
+    default_learning_rate = env_float("DEFAULT_LEARNING_RATE", 2e-4)
+    default_logging_steps = env_int("DEFAULT_LOGGING_STEPS", 1)
+    default_lora_rank = env_int("DEFAULT_LORA_RANK", 16)
+    default_max_length = env_int("DEFAULT_MAX_LENGTH", 512)
+    default_num_train_epochs = env_float("DEFAULT_NUM_TRAIN_EPOCHS", 1.0)
+    default_per_device_train_batch_size = env_int("DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE", 1)
+    default_save_steps = env_int("DEFAULT_SAVE_STEPS", 100)
 
     rank = int(os.environ.get("RANK", "0"))
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
@@ -87,8 +87,8 @@ def train_fn(
     )
 
     peft_config = LoraConfig(
-        r=DEFAULT_LORA_RANK,
-        lora_alpha=DEFAULT_LORA_RANK * 2,
+        r=default_lora_rank,
+        lora_alpha=default_lora_rank * 2,
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
@@ -110,13 +110,13 @@ def train_fn(
 
     args = SFTConfig(
         output_dir=lora_dir,
-        learning_rate=DEFAULT_LEARNING_RATE,
-        per_device_train_batch_size=DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
-        gradient_accumulation_steps=DEFAULT_GRADIENT_ACCUMULATION_STEPS,
-        num_train_epochs=DEFAULT_NUM_TRAIN_EPOCHS,
-        logging_steps=DEFAULT_LOGGING_STEPS,
-        save_steps=DEFAULT_SAVE_STEPS,
-        max_length=DEFAULT_MAX_LENGTH,
+        learning_rate=default_learning_rate,
+        per_device_train_batch_size=default_per_device_train_batch_size,
+        gradient_accumulation_steps=default_gradient_accumulation_steps,
+        num_train_epochs=default_num_train_epochs,
+        logging_steps=default_logging_steps,
+        save_steps=default_save_steps,
+        max_length=default_max_length,
         packing=False,
         **precision,
         max_grad_norm=0.3,
@@ -126,7 +126,7 @@ def train_fn(
         # warnings without this flag.
         ddp_find_unused_parameters=False,
         report_to="none",
-        dataloader_num_workers=DEFAULT_DATALOADER_NUM_WORKERS,
+        dataloader_num_workers=default_dataloader_num_workers,
         dataloader_pin_memory=True,
     )
 
@@ -153,13 +153,18 @@ def train_fn(
 # ---------------------------------------------------------------------------
 
 def parse_args() -> argparse.Namespace:
-    from project_config import ADAPTER_DIR, BASE_MODEL, LORA_DIR, TRAIN_FILE
+    from runtime_env import env_path, env_str
+
+    adapter_dir = env_path("ADAPTER_DIR", "output/lora/final")
+    base_model = env_str("BASE_MODEL")
+    lora_dir = env_path("LORA_DIR", "output/lora")
+    train_file = env_path("TRAIN_FILE", "corpus/train.jsonl")
 
     parser = argparse.ArgumentParser(description="Distributed LoRA fine-tuning via PySpark.")
-    parser.add_argument("--base-model", default=BASE_MODEL)
-    parser.add_argument("--train-file", default=str(TRAIN_FILE))
-    parser.add_argument("--lora-dir", default=str(LORA_DIR))
-    parser.add_argument("--adapter-dir", default=str(ADAPTER_DIR))
+    parser.add_argument("--base-model", default=base_model)
+    parser.add_argument("--train-file", default=str(train_file))
+    parser.add_argument("--lora-dir", default=str(lora_dir))
+    parser.add_argument("--adapter-dir", default=str(adapter_dir))
     parser.add_argument(
         "--shared-output-dir",
         default=None,

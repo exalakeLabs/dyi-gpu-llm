@@ -10,21 +10,21 @@ from peft import LoraConfig, get_peft_model
 from trl import SFTTrainer, SFTConfig
 
 from model_runtime import load_base_model, load_tokenizer
-from project_config import (
-    ADAPTER_DIR,
-    BASE_MODEL,
-    DEFAULT_DATALOADER_NUM_WORKERS,
-    DEFAULT_GRADIENT_ACCUMULATION_STEPS,
-    DEFAULT_LEARNING_RATE,
-    DEFAULT_LOGGING_STEPS,
-    DEFAULT_LORA_RANK,
-    DEFAULT_MAX_LENGTH,
-    DEFAULT_NUM_TRAIN_EPOCHS,
-    DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE,
-    DEFAULT_SAVE_STEPS,
-    LORA_DIR,
-    TRAIN_FILE,
-)
+from runtime_env import env_float, env_int, env_path, env_str
+
+ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
+BASE_MODEL = env_str("BASE_MODEL")
+DEFAULT_DATALOADER_NUM_WORKERS = env_int("DEFAULT_DATALOADER_NUM_WORKERS", 4)
+DEFAULT_GRADIENT_ACCUMULATION_STEPS = env_int("DEFAULT_GRADIENT_ACCUMULATION_STEPS", 8)
+DEFAULT_LEARNING_RATE = env_float("DEFAULT_LEARNING_RATE", 2e-4)
+DEFAULT_LOGGING_STEPS = env_int("DEFAULT_LOGGING_STEPS", 1)
+DEFAULT_LORA_RANK = env_int("DEFAULT_LORA_RANK", 16)
+DEFAULT_MAX_LENGTH = env_int("DEFAULT_MAX_LENGTH", 512)
+DEFAULT_NUM_TRAIN_EPOCHS = env_float("DEFAULT_NUM_TRAIN_EPOCHS", 1.0)
+DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE = env_int("DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE", 1)
+DEFAULT_SAVE_STEPS = env_int("DEFAULT_SAVE_STEPS", 100)
+LORA_DIR = env_path("LORA_DIR", "output/lora")
+TRAIN_FILE = env_path("TRAIN_FILE", "corpus/train.jsonl")
 
 
 def print_device_info(model) -> None:

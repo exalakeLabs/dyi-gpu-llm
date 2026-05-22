@@ -35,17 +35,17 @@ from pathlib import Path
 from datasets import Dataset
 from transformers import AutoTokenizer
 
-from project_config import (
-    DEFAULT_CORPUS_DIR,
-    DEFAULT_DATASET_NUM_PROC,
-    DEFAULT_EVAL_RATIO,
-    DEFAULT_MIN_CHARS,
-    DEFAULT_MODEL,
-    DEFAULT_SEED,
-    DEFAULT_SEQ_LEN,
-    DEFAULT_TEXT_DIR,
-    DEFAULT_TOKENIZE_BATCH_SIZE,
-)
+from runtime_env import env_float, env_int, env_str
+
+DEFAULT_CORPUS_DIR = env_str("DEFAULT_CORPUS_DIR")
+DEFAULT_DATASET_NUM_PROC = env_int("DEFAULT_DATASET_NUM_PROC", 1)
+DEFAULT_EVAL_RATIO = env_float("DEFAULT_EVAL_RATIO", 0.01)
+DEFAULT_MIN_CHARS = env_int("DEFAULT_MIN_CHARS", 1000)
+DEFAULT_MODEL = env_str("DEFAULT_MODEL")
+DEFAULT_SEED = env_int("DEFAULT_SEED", 42)
+DEFAULT_SEQ_LEN = env_int("DEFAULT_SEQ_LEN", 2048)
+DEFAULT_TEXT_DIR = env_str("DEFAULT_TEXT_DIR")
+DEFAULT_TOKENIZE_BATCH_SIZE = env_int("DEFAULT_TOKENIZE_BATCH_SIZE", 128)
 
 
 def resolve_num_proc(dataset_num_proc: int) -> int:

@@ -8,7 +8,28 @@ import re
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
-from project_config import CORPUS_DIR, END_MARKERS, PREPARED_DIR, START_MARKERS
+from runtime_env import env_list, env_path
+
+CORPUS_DIR = env_path("CORPUS_DIR", "corpus")
+PREPARED_DIR = env_path("PREPARED_DIR", "prepared")
+START_MARKERS = env_list(
+    "START_MARKERS",
+    [
+        "START OF THE PROJECT GUTENBERG EBOOK",
+        "START OF THIS PROJECT GUTENBERG EBOOK",
+        "*** START OF THE PROJECT GUTENBERG EBOOK",
+        "*** START OF THIS PROJECT GUTENBERG EBOOK",
+    ],
+)
+END_MARKERS = env_list(
+    "END_MARKERS",
+    [
+        "END OF THE PROJECT GUTENBERG EBOOK",
+        "END OF THIS PROJECT GUTENBERG EBOOK",
+        "*** END OF THE PROJECT GUTENBERG EBOOK",
+        "*** END OF THIS PROJECT GUTENBERG EBOOK",
+    ],
+)
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(

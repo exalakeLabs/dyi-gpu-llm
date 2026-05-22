@@ -7,14 +7,14 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from project_config import (
-    BATCH_SIZE,
-    CHUNK_SIZE_CHARS,
-    EMBED_MODEL,
-    OVERLAP_CHARS,
-    PREPARED_DIR,
-    RAG_DIR,
-)
+from runtime_env import env_int, env_path, env_str
+
+BATCH_SIZE = env_int("BATCH_SIZE", 32)
+CHUNK_SIZE_CHARS = env_int("CHUNK_SIZE_CHARS", 1800)
+EMBED_MODEL = env_str("EMBED_MODEL")
+OVERLAP_CHARS = env_int("OVERLAP_CHARS", 250)
+PREPARED_DIR = env_path("PREPARED_DIR", "prepared")
+RAG_DIR = env_path("RAG_DIR", "rag")
 
 def chunk_text(text: str, max_chars: int = CHUNK_SIZE_CHARS, overlap: int = OVERLAP_CHARS):
     text = text.strip()

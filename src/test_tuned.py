@@ -2,7 +2,11 @@
 
 import argparse
 from model_runtime import load_generation_model
-from project_config import ADAPTER_DIR, BASE_MODEL, MAX_NEW_TOKENS
+from runtime_env import env_int, env_path, env_str
+
+ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
+BASE_MODEL = env_str("BASE_MODEL")
+MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 
 def main():

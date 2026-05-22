@@ -15,16 +15,16 @@ from transformers import (
     AutoTokenizer,
 )
 
-from project_config import (
-    EMBED_MODEL as DEFAULT_EMBED_MODEL,
-    GENERATOR_MODEL as DEFAULT_GENERATOR,
-    MAX_NEW_TOKENS,
-    RAG_DIR,
-    RERANK_TOP_N,
-    RERANKER_MODEL as DEFAULT_RERANKER,
-    RETRIEVE_K,
-    SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT,
-)
+from runtime_env import env_int, env_path, env_str
+
+DEFAULT_EMBED_MODEL = env_str("EMBED_MODEL")
+DEFAULT_GENERATOR = env_str("GENERATOR_MODEL")
+MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
+RAG_DIR = env_path("RAG_DIR", "rag")
+RERANK_TOP_N = env_int("RERANK_TOP_N", 6)
+DEFAULT_RERANKER = env_str("RERANKER_MODEL")
+RETRIEVE_K = env_int("RETRIEVE_K", 24)
+DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
 
 def load_chunks(path: Path) -> List[Dict[str, Any]]:
     rows = []

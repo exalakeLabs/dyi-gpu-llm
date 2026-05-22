@@ -27,16 +27,32 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from project_config import (
-    BATCH_SIZE,
-    CHUNK_SIZE_CHARS,
-    EMBED_MODEL as DEFAULT_EMBED_MODEL,
-    END_MARKERS,
-    OVERLAP_CHARS,
-    PREPARED_DIR,
-    RAG_DIR,
-    START_MARKERS,
-    SYSTEM_PROMPT as DEFAULT_SYSTEM_PROMPT,
+from runtime_env import env_int, env_list, env_path, env_str
+
+BATCH_SIZE = env_int("BATCH_SIZE", 32)
+CHUNK_SIZE_CHARS = env_int("CHUNK_SIZE_CHARS", 1800)
+DEFAULT_EMBED_MODEL = env_str("EMBED_MODEL")
+OVERLAP_CHARS = env_int("OVERLAP_CHARS", 250)
+PREPARED_DIR = env_path("PREPARED_DIR", "prepared")
+RAG_DIR = env_path("RAG_DIR", "rag")
+DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
+START_MARKERS = env_list(
+    "START_MARKERS",
+    [
+        "START OF THE PROJECT GUTENBERG EBOOK",
+        "START OF THIS PROJECT GUTENBERG EBOOK",
+        "*** START OF THE PROJECT GUTENBERG EBOOK",
+        "*** START OF THIS PROJECT GUTENBERG EBOOK",
+    ],
+)
+END_MARKERS = env_list(
+    "END_MARKERS",
+    [
+        "END OF THE PROJECT GUTENBERG EBOOK",
+        "END OF THIS PROJECT GUTENBERG EBOOK",
+        "*** END OF THE PROJECT GUTENBERG EBOOK",
+        "*** END OF THIS PROJECT GUTENBERG EBOOK",
+    ],
 )
 
 SECTION_HEADING_RE = re.compile(

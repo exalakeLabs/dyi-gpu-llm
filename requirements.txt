@@ -1,9 +1,8 @@
-# PyTorch: default wheels come from PyPI. For a specific backend, install torch first, e.g.
-#   CPU:    pip install torch --index-url https://download.pytorch.org/whl/cpu
-#   CUDA:   https://pytorch.org/get-started/locally/
-#   ROCm:   pip install torch --index-url https://download.pytorch.org/whl/rocm6.2
-# Then: pip install -r requirements.txt
+# Install with ./install.zsh so backend-specific PyTorch wheel indexes are
+# applied consistently for CUDA/ROCm/MPS.
 torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
 transformers>=4.40.0
 datasets>=2.16.0
 peft>=0.11.0
@@ -17,6 +16,8 @@ uvicorn[standard]>=0.27.0
 pydantic>=2.5.0
 requests>=2.31.0
 pypdf>=4.0.0
+cryptography>=41.0.0
+truststore>=0.8.0
 sentencepiece
 evaluate
 

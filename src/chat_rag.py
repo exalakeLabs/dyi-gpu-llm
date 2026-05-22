@@ -8,15 +8,15 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from model_runtime import generate_text, load_generation_model
-from project_config import (
-    ADAPTER_DIR,
-    BASE_MODEL,
-    EMBED_MODEL,
-    MAX_NEW_TOKENS,
-    RAG_DIR,
-    RETRIEVE_K,
-    SYSTEM_PROMPT,
-)
+from runtime_env import env_int, env_path, env_str
+
+ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
+BASE_MODEL = env_str("BASE_MODEL")
+EMBED_MODEL = env_str("EMBED_MODEL")
+MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
+RAG_DIR = env_path("RAG_DIR", "rag")
+RETRIEVE_K = env_int("RETRIEVE_K", 24)
+SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
 
 
 def load_chunks(chunks_file: Path):

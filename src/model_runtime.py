@@ -5,7 +5,11 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import __version__ as _tf_version
 
-from project_config import ADAPTER_DIR, BASE_MODEL, MAX_NEW_TOKENS
+from runtime_env import env_int, env_path, env_str
+
+ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
+BASE_MODEL = env_str("BASE_MODEL")
+MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 # transformers ≥ 4.51 renamed the from_pretrained dtype kwarg from
 # `torch_dtype` to `dtype`; older builds silently ignore `dtype`.

@@ -1,0 +1,41 @@
+emulate -L zsh
+__runtime_root="${${(%):-%N}:A:h}"
+cd "$__runtime_root" || return 1
+
+if [[ ! -f "$__runtime_root/.venv/bin/activate" ]]; then
+  print -u2 "error: .venv is missing. Run ./install.zsh first."
+  unset __runtime_root
+  return 1
+fi
+
+source "$__runtime_root/.venv/bin/activate" || return 1
+
+set -a
+source "$__runtime_root/.env" || return 1
+set +a
+
+if [[ -z "${RAWTEXT_DIR:-}" && -n "${RAW_TEXT_DIR:-}" ]]; then
+  export RAWTEXT_DIR="$RAW_TEXT_DIR"
+fi
+if [[ -z "${RAW_TEXT_DIR:-}" && -n "${RAWTEXT_DIR:-}" ]]; then
+  export RAW_TEXT_DIR="$RAWTEXT_DIR"
+fi
+
+path=("$__runtime_root/.venv/bin" ${path:#"$__runtime_root/.venv/bin"})
+export PATH
+rehash 2>/dev/null || true
+
+echo
+echo "Runtime ready:"
+echo "  python: $(command -v python)"
+echo "  version: $(python --version 2>&1)"
+echo "  MODEL_ROOT: ${MODEL_ROOT:-<unset>}"
+echo "  RAWTEXT_DIR: ${RAWTEXT_DIR:-<unset>}"
+echo "  PREPARED_DIR: ${PREPARED_DIR:-<unset>}"
+echo "  RAG_DIR: ${RAG_DIR:-<unset>}"
+echo "  MODEL_DIR: ${MODEL_DIR:-<unset>}"
+echo "  CORPUS_DIR: ${CORPUS_DIR:-<unset>}"
+echo "  PDF_DIR: ${PDF_DIR:-<unset>}"
+echo "  HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-<unset>}"
+
+unset __runtime_root
