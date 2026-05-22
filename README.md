@@ -54,6 +54,24 @@ Final adapter output is saved at:
 
 - `output/lora/final/`
 
+## Continued Pretraining
+
+The partial continued-pretraining path is split into two stages. First build the
+packed token corpus from `prepared/`:
+
+```bash
+python3 src/generate_pretrain_corpus.py --text_dir prepared --corpus_dir corpus
+```
+
+Then train from the token JSONL files in `corpus/`:
+
+```bash
+python3 src/continued_pretrain_partial.py --corpus_dir corpus --eval_prompts eval_prompts.txt
+```
+
+The corpus generator writes `corpus/train.jsonl` and `corpus/eval.jsonl`, with
+each row containing fixed-length `input_ids` and matching `labels`.
+
 ## 4) Test the tuned model
 
 ```bash

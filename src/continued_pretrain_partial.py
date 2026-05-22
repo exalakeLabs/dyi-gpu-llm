@@ -28,43 +28,47 @@ Optional CUDA acceleration:
 
 pip install flash-attn --no-build-isolation
 
-Example:
+Step 1, generate packed token JSONL:
+
+python src/generate_pretrain_corpus.py \
+    --text_dir ./prepared \
+    --corpus_dir ./corpus \
+    --seq_len 2048
+
+Step 2, train from the packed corpus:
 
 python src/continued_pretrain_partial.py \
-    --dataset_dir ./science_texts \
+    --corpus_dir ./corpus \
     --output_dir ./output_science \
     --eval_prompts ./eval_prompts.txt
 
 Smaller GPU starting point:
 
 python src/continued_pretrain_partial.py \
-    --dataset_dir ./science_texts \
+    --corpus_dir ./corpus \
     --eval_prompts ./eval_prompts.txt \
-    --seq_len 1024 \
     --train_last_n_layers 4 \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 64 \
     --attention sdpa \
-    --dataloader_num_workers 2 \
-    --dataset_num_proc 2
+    --dataloader_num_workers 2
 """
 
 import argparse
 import inspect
 import math
-import os
 from pathlib import Path
 
 import torch
 
-from datasets import Dataset
+from datasets import load_dataset
 
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     Trainer,
     TrainingArguments,
-    DataCollatorForLanguageModeling,
+    default_data_collator,
     __version__ as TRANSFORMERS_VERSION,
 )
 from transformers.trainer_utils import get_last_checkpoint
@@ -74,6 +78,9 @@ from transformers.trainer_utils import get_last_checkpoint
 # ============================================================
 
 DEFAULT_MODEL = "Qwen/Qwen2.5-3B"
+DEFAULT_CORPUS_DIR = "./corpus"
+DEFAULT_TRAIN_FILE = "train.jsonl"
+DEFAULT_EVAL_FILE = "eval.jsonl"
 DEFAULT_OUTPUT_DIR = "~/pretrain/output_partial"
 DEFAULT_SAVE_STEPS = 250
 DEFAULT_NUM_TRAIN_EPOCHS = 1
@@ -84,7 +91,6 @@ DEFAULT_LR_SCHEDULER_TYPE = "cosine"
 DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE = 8
 DEFAULT_GRADIENT_ACCUMULATION_STEPS = 128
 DEFAULT_PER_DEVICE_EVAL_BATCH_SIZE = 1
-DEFAULT_SEQ_LEN = 2048
 DEFAULT_TRAIN_LAST_N_LAYERS = 8
 DEFAULT_DTYPE = "auto"
 DEFAULT_ATTENTION = "auto"
@@ -139,98 +145,61 @@ def resolve_device_map(device_map):
     return device_map
 
 
-def resolve_num_proc(dataset_num_proc):
-    if dataset_num_proc > 0:
-        return dataset_num_proc
-    return max((os.cpu_count() or 2) // 2, 1)
+def resolve_corpus_file(corpus_dir, file_arg):
+    path = Path(file_arg).expanduser()
+    if not path.is_absolute():
+        path = corpus_dir / path
+    return path
 
 
-# ============================================================
-# Dataset loader
-# ============================================================
+def load_token_corpus(train_file, eval_file):
+    train_file = Path(train_file)
+    eval_file = Path(eval_file)
 
-def load_text_files(dataset_dir):
+    if not train_file.exists():
+        raise SystemExit(f"Train corpus file not found: {train_file}")
+    if not eval_file.exists():
+        raise SystemExit(f"Eval corpus file not found: {eval_file}")
 
-    texts = []
+    dataset = load_dataset(
+        "json",
+        data_files={
+            "train": str(train_file),
+            "eval": str(eval_file),
+        },
+    )
 
-    paths = list(Path(dataset_dir).rglob("*.txt"))
+    train_dataset = dataset["train"]
+    eval_dataset = dataset["eval"]
 
-    print(f"\nFound {len(paths)} text files\n")
+    if len(train_dataset) == 0:
+        raise SystemExit(f"Train corpus is empty: {train_file}")
+    if len(eval_dataset) == 0:
+        raise SystemExit(f"Eval corpus is empty: {eval_file}")
 
-    for path in paths:
+    validate_token_dataset(train_dataset, "train", train_file)
+    validate_token_dataset(eval_dataset, "eval", eval_file)
 
-        try:
-            content = path.read_text(
-                encoding="utf-8",
-                errors="ignore",
-            ).strip()
+    return train_dataset, eval_dataset
 
-            # Skip tiny docs
-            if len(content) < 1000:
-                continue
 
-            texts.append({"text": content})
-
-        except Exception as e:
-            print(f"Skipping {path}: {e}")
-
-    return Dataset.from_list(texts)
-
-# ============================================================
-# Tokenization + sequence packing
-# ============================================================
-
-def tokenize_dataset(dataset, tokenizer, seq_len=DEFAULT_SEQ_LEN, dataset_num_proc=0):
-
-    print("\nTokenizing dataset...\n")
-    num_proc = resolve_num_proc(dataset_num_proc)
-
-    def tokenize(batch):
-
-        return tokenizer(
-            batch["text"],
-            return_attention_mask=False,
+def validate_token_dataset(dataset, split_name, path):
+    example = dataset[0]
+    missing = [
+        field
+        for field in ("input_ids", "labels")
+        if field not in example
+    ]
+    if missing:
+        missing_fields = ", ".join(missing)
+        raise SystemExit(
+            f"{split_name} corpus at {path} is missing required field(s): {missing_fields}"
         )
 
-    tokenized = dataset.map(
-        tokenize,
-        batched=True,
-        remove_columns=["text"],
-        num_proc=num_proc,
-    )
-
-    print("\nPacking sequences...\n")
-
-    def group_texts(examples):
-
-        concatenated = {}
-
-        for k in examples.keys():
-            concatenated[k] = sum(examples[k], [])
-
-        total_length = len(concatenated["input_ids"])
-
-        total_length = (total_length // seq_len) * seq_len
-
-        result = {}
-
-        for k, t in concatenated.items():
-            result[k] = [
-                t[i : i + seq_len]
-                for i in range(0, total_length, seq_len)
-            ]
-
-        result["labels"] = result["input_ids"].copy()
-
-        return result
-
-    lm_dataset = tokenized.map(
-        group_texts,
-        batched=True,
-        num_proc=num_proc,
-    )
-
-    return lm_dataset
+    if len(example["input_ids"]) != len(example["labels"]):
+        raise SystemExit(
+            f"{split_name} corpus at {path} has mismatched input_ids and labels lengths."
+        )
 
 # ============================================================
 # Model loading
@@ -557,8 +526,21 @@ def main():
     )
 
     parser.add_argument(
-        "--dataset_dir",
-        required=True,
+        "--corpus_dir",
+        default=DEFAULT_CORPUS_DIR,
+        help=f"Directory containing packed token JSONL files. Defaults to {DEFAULT_CORPUS_DIR}.",
+    )
+
+    parser.add_argument(
+        "--train_file",
+        default=DEFAULT_TRAIN_FILE,
+        help="Train JSONL file name, relative to --corpus_dir unless absolute.",
+    )
+
+    parser.add_argument(
+        "--eval_file",
+        default=DEFAULT_EVAL_FILE,
+        help="Eval JSONL file name, relative to --corpus_dir unless absolute.",
     )
 
     parser.add_argument(
@@ -570,12 +552,6 @@ def main():
     parser.add_argument(
         "--eval_prompts",
         required=True,
-    )
-
-    parser.add_argument(
-        "--seq_len",
-        type=int,
-        default=DEFAULT_SEQ_LEN,
     )
 
     parser.add_argument(
@@ -738,13 +714,6 @@ def main():
     )
 
     parser.add_argument(
-        "--dataset_num_proc",
-        type=int,
-        default=0,
-        help="Tokenization/packing process count. 0 means half of available CPUs.",
-    )
-
-    parser.add_argument(
         "--max_grad_norm",
         type=float,
         default=1.0,
@@ -757,7 +726,9 @@ def main():
     )
 
     args = parser.parse_args()
-    dataset_dir = Path(args.dataset_dir).expanduser()
+    corpus_dir = Path(args.corpus_dir).expanduser()
+    train_file = resolve_corpus_file(corpus_dir, args.train_file)
+    eval_file = resolve_corpus_file(corpus_dir, args.eval_file)
     eval_prompts_path = Path(args.eval_prompts).expanduser()
     output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -767,6 +738,20 @@ def main():
         tf32=args.tf32,
         float32_matmul_precision=args.float32_matmul_precision,
     )
+
+    # ========================================================
+    # Load packed token corpus
+    # ========================================================
+
+    print("\nLoading token corpus...\n")
+
+    train_dataset, eval_dataset = load_token_corpus(
+        train_file=train_file,
+        eval_file=eval_file,
+    )
+
+    print(f"Train corpus: {train_file} ({len(train_dataset)} examples)")
+    print(f"Eval corpus:  {eval_file} ({len(eval_dataset)} examples)")
 
     # ========================================================
     # Load tokenizer
@@ -815,39 +800,6 @@ def main():
     freeze_lower_layers(
         model,
         train_last_n_layers=args.train_last_n_layers,
-    )
-
-    # ========================================================
-    # Load dataset
-    # ========================================================
-
-    print("\nLoading dataset...\n")
-
-    dataset = load_text_files(dataset_dir)
-
-    print(dataset)
-
-    # ========================================================
-    # Train/validation split
-    # ========================================================
-
-    dataset = dataset.train_test_split(
-        test_size=0.01,
-        seed=42,
-    )
-
-    train_dataset = tokenize_dataset(
-        dataset["train"],
-        tokenizer,
-        seq_len=args.seq_len,
-        dataset_num_proc=args.dataset_num_proc,
-    )
-
-    eval_dataset = tokenize_dataset(
-        dataset["test"],
-        tokenizer,
-        seq_len=args.seq_len,
-        dataset_num_proc=args.dataset_num_proc,
     )
 
     # ========================================================
@@ -906,7 +858,7 @@ def main():
     )
 
     print(f"\nCheckpoint/output directory: {output_dir}\n")
-    print(f"Sequence length: {args.seq_len}")
+    print(f"Corpus directory: {corpus_dir}")
     print(f"Train batch size per device: {args.per_device_train_batch_size}")
     print(f"Gradient accumulation steps: {args.gradient_accumulation_steps}")
     print(f"Trainable upper layers: {args.train_last_n_layers}")
@@ -925,10 +877,7 @@ def main():
 
         eval_dataset=eval_dataset,
 
-        data_collator=DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=False,
-        ),
+        data_collator=default_data_collator,
     )
 
     # ========================================================
