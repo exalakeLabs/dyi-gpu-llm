@@ -119,37 +119,6 @@ set_env_var() {
   mv "$tmp_file" "$ENV_FILE"
 }
 
-constant_env_names() {
-  local env_source="${ENV_DEFAULT_FILE}"
-  local line name value
-
-  if [[ ! -f "$env_source" ]]; then
-    env_source="$ENV_FILE"
-  fi
-
-  if [[ ! -f "$env_source" ]]; then
-    return
-  fi
-
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    if [[ "$line" =~ "^[[:space:]]*export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)=(.*)$" ]]; then
-      name="$match[1]"
-      value="$match[2]"
-    elif [[ "$line" =~ "^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$" ]]; then
-      name="$match[1]"
-      value="$match[2]"
-    else
-      continue
-    fi
-
-    if [[ -z "$value" || "$value" == *'$'* ]]; then
-      continue
-    fi
-
-    print -r -- "$name"
-  done < "$env_source"
-}
-
 literal_env_defaults() {
   local env_source="${ENV_DEFAULT_FILE}"
   local line name value fallback
@@ -259,10 +228,11 @@ configure_runtime_env() {
   printf '\n\033[1;34mEnvironment defaults\033[0m\n'
   printf 'Press Enter to keep the current value.\n\n'
 
-  local entry name fallback
+  local entry name fallback sep
+  sep=$'\t'
   for entry in "$prompt_defaults[@]"; do
-    name="${entry%%	*}"
-    fallback="${entry#*	}"
+    name="${entry%%${sep}*}"
+    fallback="${entry#*${sep}}"
     prompt_env_var "$name" "$fallback"
   done
 
