@@ -13,6 +13,8 @@ from runtime_env import env_int, env_path, env_str
 ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
 BASE_MODEL = env_str("BASE_MODEL")
 EMBED_MODEL = env_str("EMBED_MODEL")
+GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
+GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 RAG_DIR = env_path("RAG_DIR", "rag")
 RETRIEVE_K = env_int("RETRIEVE_K", 24)
@@ -56,7 +58,8 @@ def format_context(hits):
 def main() -> int:
     parser = argparse.ArgumentParser(description="Chat with a local FAISS RAG index.")
     parser.add_argument("--rag-dir", default=str(RAG_DIR))
-    parser.add_argument("--base-model", default=BASE_MODEL)
+    parser.add_argument("--base-model", "--generator-model", dest="generator_model", default=GENERATOR_MODEL)
+    parser.add_argument("--generator-backend", default=GENERATOR_BACKEND)
     parser.add_argument("--adapter-dir", default=str(ADAPTER_DIR))
     parser.add_argument("--no-adapter", action="store_true")
     parser.add_argument("--embed-model", default=EMBED_MODEL)
@@ -75,9 +78,10 @@ def main() -> int:
     embedder = SentenceTransformer(args.embed_model)
 
     tokenizer, model = load_generation_model(
-        base_model=args.base_model,
+        base_model=args.generator_model,
         adapter_path=adapter_dir,
         use_adapter=not args.no_adapter and adapter_dir.exists(),
+        backend=args.generator_backend,
     )
 
     while True:

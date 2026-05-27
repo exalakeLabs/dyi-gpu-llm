@@ -1,5 +1,7 @@
 import pathlib
+from typing import Any
 
+import requests
 import torch
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -9,7 +11,12 @@ from runtime_env import env_int, env_path, env_str
 
 ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
 BASE_MODEL = env_str("BASE_MODEL")
+GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
+GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
+OLLAMA_BASE_URL = env_str("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_NUM_CTX = env_int("OLLAMA_NUM_CTX", 8192)
+OLLAMA_TIMEOUT_SECONDS = env_int("OLLAMA_TIMEOUT_SECONDS", 600)
 
 # transformers ≥ 4.51 renamed the from_pretrained dtype kwarg from
 # `torch_dtype` to `dtype`; older builds silently ignore `dtype`.
@@ -78,6 +85,73 @@ def patch_rocm_isin() -> None:
     torch.isin = safe_isin
 
 
+class OllamaGenerationRuntime:
+    def __init__(
+        self,
+        model: str,
+        base_url: str = OLLAMA_BASE_URL,
+        timeout: int = OLLAMA_TIMEOUT_SECONDS,
+    ) -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+    def generate_chat(self, messages: list[dict[str, str]], **generate_kwargs: Any) -> str:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": _ollama_options(generate_kwargs),
+        }
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                "Ollama generation failed. Start Ollama and run "
+                f"`ollama pull {self.model}` before retrying."
+            ) from exc
+
+        data = response.json()
+        message = data.get("message", {})
+        return str(message.get("content", "")).strip()
+
+
+def _resolve_generation_backend(backend: str | None, model_name: str) -> str:
+    selected = (backend or GENERATOR_BACKEND or "transformers").lower()
+    if selected == "auto":
+        return "ollama" if ":" in model_name and "/" not in model_name else "transformers"
+    if selected not in {"transformers", "ollama"}:
+        raise ValueError(
+            f"Unknown generator backend {selected!r}. Use 'transformers', 'ollama', or 'auto'."
+        )
+    return selected
+
+
+def _ollama_options(generate_kwargs: dict[str, Any]) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "num_ctx": OLLAMA_NUM_CTX,
+        "num_predict": generate_kwargs.get("max_new_tokens", MAX_NEW_TOKENS),
+    }
+
+    if "temperature" in generate_kwargs:
+        options["temperature"] = generate_kwargs["temperature"]
+    elif generate_kwargs.get("do_sample") is False:
+        options["temperature"] = 0
+
+    if "top_p" in generate_kwargs:
+        options["top_p"] = generate_kwargs["top_p"]
+    if "repetition_penalty" in generate_kwargs:
+        options["repeat_penalty"] = generate_kwargs["repetition_penalty"]
+
+    return {key: value for key, value in options.items() if value is not None}
+
+
 def load_tokenizer(base_model: str = BASE_MODEL):
     tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -100,11 +174,18 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
 
 
 def load_generation_model(
-    base_model: str = BASE_MODEL,
+    base_model: str = GENERATOR_MODEL,
     adapter_path=ADAPTER_DIR,
     use_adapter=True,
+    backend: str | None = None,
     **model_kwargs,
 ):
+    backend_name = _resolve_generation_backend(backend, base_model)
+    if backend_name == "ollama":
+        if use_adapter:
+            print("Note: LoRA adapters are ignored when GENERATOR_BACKEND=ollama.")
+        return None, OllamaGenerationRuntime(base_model)
+
     patch_rocm_isin()
     tokenizer = load_tokenizer(base_model)
     model = load_base_model(base_model, **model_kwargs)
@@ -140,7 +221,11 @@ def chat_inputs(tokenizer, model, messages):
 
 
 def generate_text(tokenizer, model, messages, **generate_kwargs) -> str:
+    if isinstance(model, OllamaGenerationRuntime):
+        return model.generate_chat(messages, **generate_kwargs)
+
     inputs = chat_inputs(tokenizer, model, messages)
+    input_tokens = inputs["input_ids"].shape[-1]
     defaults = {
         "max_new_tokens": MAX_NEW_TOKENS,
         "do_sample": False,
@@ -154,4 +239,5 @@ def generate_text(tokenizer, model, messages, **generate_kwargs) -> str:
     with torch.inference_mode():
         outputs = model.generate(**inputs, **defaults)
 
-    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+    new_tokens = outputs[0][input_tokens:]
+    return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()

@@ -10,14 +10,15 @@ import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
 from transformers import (
-    AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
 )
 
+from model_runtime import generate_text, load_generation_model
 from runtime_env import env_int, env_path, env_str
 
 DEFAULT_EMBED_MODEL = env_str("EMBED_MODEL")
+DEFAULT_GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
 DEFAULT_GENERATOR = env_str("GENERATOR_MODEL")
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 RAG_DIR = env_path("RAG_DIR", "rag")
@@ -110,7 +111,6 @@ def generate_answer(
     context: str,
     gen_tokenizer,
     gen_model,
-    device: str,
     max_new_tokens: int = MAX_NEW_TOKENS,
     system_prompt: str = DEFAULT_SYSTEM_PROMPT,
 ):
@@ -129,29 +129,20 @@ def generate_answer(
         },
     ]
 
-    text = gen_tokenizer.apply_chat_template(
+    return generate_text(
+        gen_tokenizer,
+        gen_model,
         messages,
-        tokenize=False,
-        add_generation_prompt=True,
+        max_new_tokens=max_new_tokens,
+        do_sample=True,
+        temperature=0.2,
+        top_p=0.9,
     )
-    inputs = gen_tokenizer(text, return_tensors="pt").to(device)
-
-    with torch.no_grad():
-        outputs = gen_model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=0.2,
-            top_p=0.9,
-            pad_token_id=gen_tokenizer.pad_token_id,
-        )
-
-    new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-    return gen_tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--index-dir", default=str(RAG_DIR))
+    parser.add_argument("--generator-backend", default=DEFAULT_GENERATOR_BACKEND)
     parser.add_argument("--generator-model", default=DEFAULT_GENERATOR)
     parser.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL)
     parser.add_argument("--reranker-model", default=DEFAULT_RERANKER)
@@ -192,14 +183,12 @@ def main():
     ).to(device)
     rerank_model.eval()
 
-    print(f"Loading generator: {args.generator_model}")
-    gen_tokenizer = AutoTokenizer.from_pretrained(args.generator_model)
-    gen_model = AutoModelForCausalLM.from_pretrained(
-        args.generator_model,
-        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if torch.cuda.is_available() else None,
+    print(f"Loading generator ({args.generator_backend}): {args.generator_model}")
+    gen_tokenizer, gen_model = load_generation_model(
+        base_model=args.generator_model,
+        backend=args.generator_backend,
+        use_adapter=False,
     )
-    gen_model.eval()
 
     print("\nRAG chat ready. Type 'exit' to quit.\n")
 
@@ -232,7 +221,6 @@ def main():
             context=context,
             gen_tokenizer=gen_tokenizer,
             gen_model=gen_model,
-            device=device,
             max_new_tokens=args.max_new_tokens,
             system_prompt=args.system_prompt,
         )

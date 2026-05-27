@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
-from model_runtime import load_generation_model
+from model_runtime import generate_text, load_generation_model
 from runtime_env import env_int, env_str
 
 BASE_MODEL = env_str("BASE_MODEL")
+GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
+GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 
@@ -12,9 +14,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--base-model",
-        default=BASE_MODEL,
+        "--generator-model",
+        dest="generator_model",
+        default=GENERATOR_MODEL,
         help="Base model name or path",
     )
+    parser.add_argument("--generator-backend", default=GENERATOR_BACKEND)
     parser.add_argument(
         "--prompt",
         default="Explain RAG indexing in plain English.",
@@ -29,35 +34,20 @@ def main():
     args = parser.parse_args()
 
     tokenizer, model = load_generation_model(
-        base_model=args.base_model,
+        base_model=args.generator_model,
+        backend=args.generator_backend,
         use_adapter=False,
     )
 
-    messages = [
-        {"role": "user", "content": args.prompt}
-    ]
-
-    text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
-
-    outputs = model.generate(
-        **inputs,
+    response = generate_text(
+        tokenizer,
+        model,
+        [{"role": "user", "content": args.prompt}],
         max_new_tokens=args.max_new_tokens,
         do_sample=True,
         temperature=0.7,
         top_p=0.9,
         repetition_penalty=1.05,
-        pad_token_id=tokenizer.eos_token_id,
-    )
-
-    response = tokenizer.decode(
-        outputs[0][inputs["input_ids"].shape[-1]:],
-        skip_special_tokens=True,
     )
 
     print(response)
