@@ -24,6 +24,7 @@ except ModuleNotFoundError:
 
 import faiss
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
@@ -31,6 +32,7 @@ from runtime_env import env_int, env_list, env_path, env_str
 
 BATCH_SIZE = env_int("BATCH_SIZE", 32)
 CHUNK_SIZE_CHARS = env_int("CHUNK_SIZE_CHARS", 1800)
+DEFAULT_EMBED_DEVICE = env_str("EMBED_DEVICE", "auto")
 DEFAULT_EMBED_MODEL = env_str("EMBED_MODEL")
 OVERLAP_CHARS = env_int("OVERLAP_CHARS", 250)
 PREPARED_DIR = env_path("PREPARED_DIR", "prepared")
@@ -232,6 +234,61 @@ def embed_texts(
     return embeddings.astype("float32")
 
 
+def _mps_available() -> bool:
+    return bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_available()
+
+
+def _device_index(device: str) -> int:
+    parsed = torch.device(device)
+    return parsed.index if parsed.index is not None else torch.cuda.current_device()
+
+
+def resolve_embed_device(device: str) -> str:
+    requested = (device or "auto").strip().lower()
+    if requested == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if _mps_available():
+            return "mps"
+        return "cpu"
+
+    if requested == "cpu":
+        return "cpu"
+
+    if requested.startswith("cuda"):
+        if not torch.cuda.is_available():
+            raise SystemExit(
+                "Embedding device 'cuda' was requested, but torch.cuda.is_available() is false.\n"
+                f"torch={torch.__version__}, torch.version.cuda={torch.version.cuda}, "
+                f"torch.version.hip={torch.version.hip}\n"
+                "For AMD/ROCm, reinstall PyTorch with a ROCm wheel; PyTorch still exposes "
+                "ROCm GPUs through the 'cuda' device API."
+            )
+        index = _device_index(requested)
+        if index >= torch.cuda.device_count():
+            raise SystemExit(
+                f"Embedding device {requested!r} was requested, but only "
+                f"{torch.cuda.device_count()} CUDA/ROCm device(s) are visible."
+            )
+        return requested
+
+    if requested == "mps":
+        if not _mps_available():
+            raise SystemExit("Embedding device 'mps' was requested, but torch.backends.mps is not available.")
+        return "mps"
+
+    raise SystemExit("Unknown embedding device. Use auto, cuda, cuda:<id>, mps, or cpu.")
+
+
+def describe_embed_device(device: str) -> str:
+    if device.startswith("cuda") and torch.cuda.is_available():
+        index = _device_index(device)
+        name = torch.cuda.get_device_name(index)
+        backend = "ROCm" if torch.version.hip else "CUDA"
+        return f"{device} ({backend}: {name})"
+    return device
+
+
 def extract_title_author(path: Path, text: str) -> Dict[str, str]:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     title = path.stem.replace("_", " ").replace("-", " ").strip()
@@ -323,6 +380,11 @@ def main():
         help="Directory for FAISS index + metadata",
     )
     parser.add_argument("--embed-model", default=DEFAULT_EMBED_MODEL)
+    parser.add_argument(
+        "--device",
+        default=DEFAULT_EMBED_DEVICE,
+        help="Embedding device: auto, cuda, cuda:<id>, mps, or cpu.",
+    )
     parser.add_argument("--chunk-size-chars", type=int, default=CHUNK_SIZE_CHARS)
     parser.add_argument("--overlap-chars", type=int, default=OVERLAP_CHARS)
     parser.add_argument("--min-chunk-chars", type=int, default=120)
@@ -351,8 +413,12 @@ def main():
     if not files:
         raise SystemExit(f"No .txt files found in {input_dir}")
 
+    embed_device = resolve_embed_device(args.device)
     print(f"Loading embedding model: {args.embed_model}")
-    embedder = SentenceTransformer(args.embed_model)
+    print(f"Embedding device: {describe_embed_device(embed_device)}")
+    if embed_device == "cpu" and (args.device or "auto").strip().lower() == "auto":
+        print("Warning: no Torch accelerator is available; embedding will run on CPU.")
+    embedder = SentenceTransformer(args.embed_model, device=embed_device)
 
     all_meta: List[Dict[str, Any]] = []
     batch_chunks: List[str] = []
@@ -424,6 +490,10 @@ def main():
 
     config = {
         "embed_model": args.embed_model,
+        "embed_device": embed_device,
+        "torch_version": torch.__version__,
+        "torch_cuda_version": torch.version.cuda,
+        "torch_hip_version": torch.version.hip,
         "index_type": "faiss.IndexHNSWFlat(M=32)",
         "normalize_embeddings": True,
         "chunk_size_chars": args.chunk_size_chars,

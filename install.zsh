@@ -27,7 +27,7 @@ Usage: ${SCRIPT_NAME} --backend <cuda|rocm|mps> [--cuda-version <ver>] [--rocm-v
                   mps    Install PyTorch with MPS (Apple Silicon)
 
   --cuda-version  CUDA wheel suffix, e.g. cu124 (default: cu124)
-  --rocm-version  ROCm wheel suffix, e.g. rocm6.2 (default: rocm6.2)
+  --rocm-version  ROCm wheel suffix, e.g. rocm6.4 (default: rocm6.4)
 
 Environment overrides:
   PYTHON             Python executable used to create the venv (default: python3)
@@ -44,7 +44,7 @@ EOF
 }
 
 CUDA_VERSION="cu124"
-ROCM_VERSION="rocm6.2"
+ROCM_VERSION="rocm6.4"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -297,12 +297,17 @@ fi
 source "$VENV_PATH/bin/activate"
 python -m pip install -U pip
 
-pip_args=(-r "$REQUIREMENTS_FILE")
 if [[ -n "$TORCH_INDEX" ]]; then
-  pip_args+=(--extra-index-url "$TORCH_INDEX")
-fi
+  printf '\nInstalling PyTorch from backend-specific index: %s\n' "$TORCH_INDEX"
+  python -m pip install --index-url "$TORCH_INDEX" torch torchvision torchaudio
 
-python -m pip install "${pip_args[@]}"
+  REQUIREMENTS_NO_TORCH="$(mktemp)"
+  trap 'rm -f "$REQUIREMENTS_NO_TORCH"' EXIT
+  grep -Ev '^[[:space:]]*(torch|torchvision|torchaudio)([<>=!~[:space:]]|$)' "$REQUIREMENTS_FILE" > "$REQUIREMENTS_NO_TORCH"
+  python -m pip install -r "$REQUIREMENTS_NO_TORCH"
+else
+  python -m pip install -r "$REQUIREMENTS_FILE"
+fi
 
 # ---------------------------------------------------------------------------
 # Environment check
