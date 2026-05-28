@@ -255,29 +255,34 @@ def resolve_embed_device(device: str) -> str:
     if requested == "cpu":
         return "cpu"
 
-    if requested.startswith("cuda"):
+    if requested.startswith("cuda") or requested.startswith("rocm") or requested.startswith("hip"):
         if not torch.cuda.is_available():
             raise SystemExit(
-                "Embedding device 'cuda' was requested, but torch.cuda.is_available() is false.\n"
+                f"Embedding device {requested!r} was requested, but torch.cuda.is_available() is false.\n"
                 f"torch={torch.__version__}, torch.version.cuda={torch.version.cuda}, "
                 f"torch.version.hip={torch.version.hip}\n"
                 "For AMD/ROCm, reinstall PyTorch with a ROCm wheel; PyTorch still exposes "
                 "ROCm GPUs through the 'cuda' device API."
             )
-        index = _device_index(requested)
+        if requested.startswith(("rocm", "hip")) and torch.version.hip is None:
+            raise SystemExit(
+                f"Embedding device {requested!r} was requested, but this PyTorch build is not ROCm/HIP."
+            )
+        torch_device = requested.replace("rocm", "cuda", 1).replace("hip", "cuda", 1)
+        index = _device_index(torch_device)
         if index >= torch.cuda.device_count():
             raise SystemExit(
                 f"Embedding device {requested!r} was requested, but only "
                 f"{torch.cuda.device_count()} CUDA/ROCm device(s) are visible."
             )
-        return requested
+        return torch_device
 
     if requested == "mps":
         if not _mps_available():
             raise SystemExit("Embedding device 'mps' was requested, but torch.backends.mps is not available.")
         return "mps"
 
-    raise SystemExit("Unknown embedding device. Use auto, cuda, cuda:<id>, mps, or cpu.")
+    raise SystemExit("Unknown embedding device. Use auto, rocm, rocm:<id>, cuda, cuda:<id>, mps, or cpu.")
 
 
 def describe_embed_device(device: str) -> str:
@@ -383,7 +388,7 @@ def main():
     parser.add_argument(
         "--device",
         default=DEFAULT_EMBED_DEVICE,
-        help="Embedding device: auto, cuda, cuda:<id>, mps, or cpu.",
+        help="Embedding device: auto, rocm, rocm:<id>, cuda, cuda:<id>, mps, or cpu.",
     )
     parser.add_argument("--chunk-size-chars", type=int, default=CHUNK_SIZE_CHARS)
     parser.add_argument("--overlap-chars", type=int, default=OVERLAP_CHARS)

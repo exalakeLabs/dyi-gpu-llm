@@ -9,6 +9,7 @@ peft>=0.11.0
 trl>=0.8.0
 accelerate>=0.30.0
 sentence-transformers>=2.6.0
+kernels>=0.12.0
 faiss-cpu>=1.7.4
 numpy>=1.24.0
 fastapi>=0.109.0

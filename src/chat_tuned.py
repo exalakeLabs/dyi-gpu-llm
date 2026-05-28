@@ -14,7 +14,7 @@ from model_runtime import generate_text, load_generation_model
 from runtime_env import env_int, env_str
 
 DEFAULT_ATTENTION = env_str("DEFAULT_ATTENTION", "auto")
-DEFAULT_BACKEND = env_str("DEFAULT_BACKEND", "cuda:0")
+DEFAULT_BACKEND = env_str("DEFAULT_BACKEND", "rocm:0")
 DEFAULT_DTYPE = env_str("DEFAULT_DTYPE", "auto")
 DEFAULT_MODEL_PATH = env_str("DEFAULT_MODEL_PATH")
 DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
@@ -65,6 +65,8 @@ def _has_tokenizer_files(path: Path) -> bool:
 def _resolve_model_path(model_path: str, checkpoint: str) -> Path:
     base = Path(model_path).expanduser()
 
+    print(f"Model path: {base}")
+
     if checkpoint == "root":
         return base
 
@@ -104,11 +106,11 @@ def _parse_backend(backend: str) -> tuple[str, int | None]:
 
     if name == "cpu":
         return name, None
-    if name == "cuda":
+    if name in {"cuda", "rocm", "hip"}:
         return name, int(parts[1]) if len(parts) > 1 else 0
 
     raise argparse.ArgumentTypeError(
-        f"Unknown backend {backend!r}. Use cuda, cuda:<id>, or cpu."
+        f"Unknown backend {backend!r}. Use rocm, rocm:<id>, cuda, cuda:<id>, or cpu."
     )
 
 
@@ -123,9 +125,15 @@ def _resolve_dtype(dtype_name: str, backend_name: str) -> torch.dtype:
     return torch.float16
 
 
-def _configure_cuda(device_id: int, tf32: bool) -> None:
+def _configure_accelerator(backend_name: str, device_id: int, tf32: bool) -> None:
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA backend requested, but torch.cuda.is_available() is false.")
+        raise RuntimeError(
+            f"{backend_name.upper()} backend requested, but torch.cuda.is_available() is false."
+        )
+    if backend_name in {"rocm", "hip"} and torch.version.hip is None:
+        raise RuntimeError(
+            f"{backend_name.upper()} backend requested, but this PyTorch build is not ROCm/HIP."
+        )
 
     torch.cuda.set_device(device_id)
     torch.backends.cuda.matmul.allow_tf32 = tf32
@@ -141,7 +149,8 @@ def _configure_cuda(device_id: int, tf32: bool) -> None:
 
     props = torch.cuda.get_device_properties(device_id)
     total_gb = props.total_memory / (1024**3)
-    print(f"CUDA device {device_id}: {props.name} ({total_gb:.1f} GiB)")
+    backend_label = "ROCm" if torch.version.hip else "CUDA"
+    print(f"{backend_label} device {device_id}: {props.name} ({total_gb:.1f} GiB)")
     print(f"TF32 enabled: {tf32}")
 
 
@@ -301,7 +310,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend",
         default=DEFAULT_BACKEND,
-        help="Inference backend. Default: cuda:0 for the RTX 5070.",
+        help="Inference backend: rocm:<id>, cuda:<id>, or cpu.",
     )
     parser.add_argument(
         "--generator-backend",
@@ -373,28 +382,34 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _build_parser().parse_args()
 
-    if args.generator_backend != "transformers":
-        tokenizer, model = load_generation_model(
-            base_model=args.generator_model,
-            backend=args.generator_backend,
-            use_adapter=False,
-        )
-        print(f"Generator backend: {args.generator_backend}")
-        print(f"Generator model: {args.generator_model}")
+    print(f"Generator backend: {args.generator_backend}")
+    print(f"Generator model: {args.generator_model}")
+    print(f"Model path: {args.model_path}")
+    print(f"Tokenizer path: {args.tokenizer_path}")
+    print(f"Backend: {args.backend}")
 
-        while True:
-            prompt = input("\nPrompt> ").strip()
-            if not prompt or prompt.lower() in {"exit", "quit"}:
-                break
+    # if args.generator_backend != "transformers":
 
-            print("\n" + _generate_ollama_response(tokenizer, model, prompt, args))
+    #     print("RUNNING AS TRANSFORMERS")
+    #     tokenizer, model = load_generation_model(
+    #         base_model=args.generator_model,
+    #         backend=args.generator_backend,
+    #         use_adapter=False,
+    #     )
 
-        return 0
+    #     while True:
+    #         prompt = input("\nPrompt> ").strip()
+    #         if not prompt or prompt.lower() in {"exit", "quit"}:
+    #             break
+
+    #         print("\n" + _generate_ollama_response(tokenizer, model, prompt, args))
+
+    #     return 0
 
     backend_name, device_id = _parse_backend(args.backend)
     dtype = _resolve_dtype(args.dtype, backend_name)
-    if backend_name == "cuda":
-        _configure_cuda(device_id or 0, args.tf32)
+    if backend_name in {"cuda", "rocm", "hip"}:
+        _configure_accelerator(backend_name, device_id or 0, args.tf32)
 
     model_path = _resolve_model_path(args.model_path, args.checkpoint)
     tokenizer_path = _resolve_tokenizer_path(model_path, args.tokenizer_path)

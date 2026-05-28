@@ -221,7 +221,59 @@ def format_messages_with_template(messages, tokenizer) -> str:
 
 
 def tokenize_dataset(dataset, tokenizer, max_length: int, train_file: Path):
-    if "text" in dataset.column_names:
+    column_names = list(dataset.column_names)
+
+    if {"input_ids", "labels"}.issubset(column_names):
+        sample = dataset[0]
+        input_ids = sample.get("input_ids") or []
+        labels = sample.get("labels") or []
+        if not input_ids:
+            raise ValueError(f"Pre-tokenized dataset at {train_file} has empty input_ids.")
+        if len(input_ids) != len(labels):
+            raise ValueError(
+                f"Pre-tokenized dataset at {train_file} has mismatched input_ids "
+                f"and labels lengths in the first row."
+            )
+
+        keep_columns = [
+            name
+            for name in ("input_ids", "labels", "attention_mask")
+            if name in column_names
+        ]
+        remove_columns = [name for name in column_names if name not in keep_columns]
+        tokenized = dataset.remove_columns(remove_columns) if remove_columns else dataset
+
+        if max_length > 0 and len(input_ids) > max_length:
+
+            def truncate_fn(batch):
+                truncated = {
+                    "input_ids": [tokens[:max_length] for tokens in batch["input_ids"]],
+                    "labels": [tokens[:max_length] for tokens in batch["labels"]],
+                }
+                if "attention_mask" in batch:
+                    truncated["attention_mask"] = [
+                        mask[:max_length] for mask in batch["attention_mask"]
+                    ]
+                return truncated
+
+            tokenized = tokenized.map(
+                truncate_fn,
+                batched=True,
+                desc=f"Truncating pre-tokenized train dataset to {max_length} tokens",
+            )
+            print(
+                f"Using pre-tokenized dataset from {train_file}; "
+                f"truncated sequences from {len(input_ids)} to {max_length} tokens."
+            )
+        else:
+            print(
+                f"Using pre-tokenized dataset from {train_file}; "
+                f"sequence length is {len(input_ids)} tokens."
+            )
+
+        return tokenized
+
+    if "text" in column_names:
 
         def tokenize_fn(batch):
             return tokenizer(
@@ -231,7 +283,7 @@ def tokenize_dataset(dataset, tokenizer, max_length: int, train_file: Path):
                 padding=False,
             )
 
-    elif "messages" in dataset.column_names:
+    elif "messages" in column_names:
 
         def tokenize_fn(batch):
             texts = [
@@ -247,14 +299,14 @@ def tokenize_dataset(dataset, tokenizer, max_length: int, train_file: Path):
 
     else:
         raise ValueError(
-            f"Expected either 'text' or 'messages' column in {train_file}, "
-            f"but found: {dataset.column_names}"
+            f"Expected either pre-tokenized 'input_ids'/'labels', 'text', "
+            f"or 'messages' columns in {train_file}, but found: {column_names}"
         )
 
     tokenized = dataset.map(
         tokenize_fn,
         batched=True,
-        remove_columns=dataset.column_names,
+        remove_columns=column_names,
         desc="Tokenizing train dataset",
     )
     return tokenized
