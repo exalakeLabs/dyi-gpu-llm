@@ -67,6 +67,7 @@ from datasets import load_dataset
 from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
+    Mxfp4Config,
     Trainer,
     TrainingArguments,
     default_data_collator,
@@ -87,7 +88,14 @@ DEFAULT_GRADIENT_ACCUMULATION_STEPS = env_int("DEFAULT_GRADIENT_ACCUMULATION_STE
 DEFAULT_LEARNING_RATE = env_float("DEFAULT_LEARNING_RATE", 2e-6)
 DEFAULT_LOGGING_STEPS = env_int("DEFAULT_LOGGING_STEPS", 1)
 DEFAULT_LR_SCHEDULER_TYPE = env_str("DEFAULT_LR_SCHEDULER_TYPE", "cosine")
+DEFAULT_MAX_MEMORY = env_str("DEFAULT_MAX_MEMORY", "")
 DEFAULT_MODEL = env_str("DEFAULT_MODEL")
+DEFAULT_MXFP4_DEQUANTIZE = env_str("DEFAULT_MXFP4_DEQUANTIZE", "0").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 DEFAULT_NUM_TRAIN_EPOCHS = env_float("DEFAULT_NUM_TRAIN_EPOCHS", 1.0)
 DEFAULT_OPTIM = env_str("DEFAULT_OPTIM", "adamw_torch_fused")
 DEFAULT_OUTPUT_DIR = env_str("DEFAULT_OUTPUT_DIR")
@@ -99,6 +107,7 @@ DEFAULT_TRAIN_FILE = env_str("DEFAULT_TRAIN_FILE", "train.jsonl")
 DEFAULT_TRAIN_LAST_N_LAYERS = env_int("DEFAULT_TRAIN_LAST_N_LAYERS", 8)
 DEFAULT_WARMUP_RATIO = env_float("DEFAULT_WARMUP_RATIO", 0.03)
 DEFAULT_WEIGHT_DECAY = env_float("DEFAULT_WEIGHT_DECAY", 0.01)
+DEFAULT_CPU_MEMORY = env_str("DEFAULT_CPU_MEMORY", "64GiB")
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 # Good alternatives:
@@ -145,6 +154,15 @@ def resolve_device_map(device_map):
     if device_map == "single":
         return {"": 0}
     return device_map
+
+
+def resolve_max_memory(max_memory, cpu_memory):
+    if not max_memory:
+        return None
+    return {
+        0: max_memory,
+        "cpu": cpu_memory,
+    }
 
 
 def resolve_corpus_file(corpus_dir, file_arg):
@@ -212,6 +230,9 @@ def load_causal_lm(
     dtype,
     attention=DEFAULT_ATTENTION,
     device_map=DEFAULT_DEVICE_MAP,
+    max_memory=DEFAULT_MAX_MEMORY,
+    cpu_memory=DEFAULT_CPU_MEMORY,
+    mxfp4_dequantize=DEFAULT_MXFP4_DEQUANTIZE,
     low_cpu_mem_usage=True,
 ):
 
@@ -221,14 +242,27 @@ def load_causal_lm(
         low_cpu_mem_usage=low_cpu_mem_usage,
     )
     common[transformers_dtype_kwarg()] = dtype
+    if mxfp4_dequantize:
+        common["quantization_config"] = Mxfp4Config(dequantize=True)
 
     resolved_device_map = resolve_device_map(device_map)
     if resolved_device_map is not None:
         common["device_map"] = resolved_device_map
+        resolved_max_memory = resolve_max_memory(max_memory, cpu_memory)
+        if resolved_max_memory is not None:
+            common["max_memory"] = resolved_max_memory
 
     if attention == "default":
         print("Using default attention implementation.")
         return AutoModelForCausalLM.from_pretrained(**common)
+
+    if attention == "eager":
+        model = AutoModelForCausalLM.from_pretrained(
+            **common,
+            attn_implementation="eager",
+        )
+        print("eager attention enabled.")
+        return model
 
     if attention != "auto":
         model = AutoModelForCausalLM.from_pretrained(
@@ -256,9 +290,12 @@ def load_causal_lm(
         print("SDPA attention enabled.")
         return model
     except (ImportError, TypeError, ValueError) as e:
-        print(f"SDPA not available; falling back to default attention. ({e})")
+        print(f"SDPA not available; falling back to eager attention. ({e})")
 
-    return AutoModelForCausalLM.from_pretrained(**common)
+    return AutoModelForCausalLM.from_pretrained(
+        **common,
+        attn_implementation="eager",
+    )
 
 
 # ============================================================
@@ -571,7 +608,7 @@ def main():
 
     parser.add_argument(
         "--attention",
-        choices=("auto", "flash_attention_2", "sdpa", "default"),
+        choices=("auto", "flash_attention_2", "sdpa", "eager", "default"),
         default=DEFAULT_ATTENTION,
         help="Attention backend. Smaller systems often work well with sdpa.",
     )
@@ -581,6 +618,22 @@ def main():
         choices=("auto", "single", "none"),
         default=DEFAULT_DEVICE_MAP,
         help="'auto' lets Transformers place layers, 'single' forces GPU 0.",
+    )
+    parser.add_argument(
+        "--max_memory",
+        default=DEFAULT_MAX_MEMORY,
+        help="Optional GPU memory cap for device_map=auto, e.g. 6GiB.",
+    )
+    parser.add_argument(
+        "--cpu_memory",
+        default=DEFAULT_CPU_MEMORY,
+        help="CPU memory cap paired with --max_memory, e.g. 64GiB.",
+    )
+    parser.add_argument(
+        "--mxfp4_dequantize",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_MXFP4_DEQUANTIZE,
+        help="Dequantize MXFP4 weights to bf16 while loading. Uses more CPU RAM but avoids MXFP4 GPU conversion.",
     )
 
     parser.add_argument(
@@ -777,12 +830,18 @@ def main():
     print(f"Resolved dtype: {dtype}")
     print(f"Attention: {args.attention}")
     print(f"Device map: {args.device_map}")
+    if args.max_memory:
+        print(f"Max memory: GPU 0={args.max_memory}, CPU={args.cpu_memory}")
+    print(f"MXFP4 dequantize: {args.mxfp4_dequantize}")
 
     model = load_causal_lm(
         args.model_name,
         dtype=dtype,
         attention=args.attention,
         device_map=args.device_map,
+        max_memory=args.max_memory,
+        cpu_memory=args.cpu_memory,
+        mxfp4_dequantize=args.mxfp4_dequantize,
         low_cpu_mem_usage=args.low_cpu_mem_usage,
     )
 
