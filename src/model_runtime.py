@@ -3,7 +3,6 @@ from typing import Any
 
 import requests
 import torch
-from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import __version__ as _tf_version
 
@@ -197,6 +196,8 @@ def load_generation_model(
                 f"No adapter_config.json found at '{adapter_path}'. "
                 "Run training first, or pass use_adapter=False / --no-adapter to load the base model only."
             )
+        from peft import PeftModel
+
         model = PeftModel.from_pretrained(
             model,
             str(adapter_path),
