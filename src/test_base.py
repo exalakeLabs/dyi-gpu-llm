@@ -5,9 +5,8 @@ from model_runtime import generate_text, load_generation_model
 from runtime_env import env_int, env_str
 
 BASE_MODEL = env_str("BASE_MODEL")
-GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
-GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
+TEST_BASE_MODEL = env_str("TEST_BASE_MODEL", BASE_MODEL)
 
 
 def main():
@@ -16,10 +15,15 @@ def main():
         "--base-model",
         "--generator-model",
         dest="generator_model",
-        default=GENERATOR_MODEL,
-        help="Base model name or path",
+        default=TEST_BASE_MODEL,
+        help="Transformers model name or path",
     )
-    parser.add_argument("--generator-backend", default=GENERATOR_BACKEND)
+    parser.add_argument(
+        "--generator-backend",
+        default="transformers",
+        choices=["transformers"],
+        help="Runtime backend for this base-model test.",
+    )
     parser.add_argument(
         "--prompt",
         default="Explain RAG indexing in plain English.",
