@@ -26,7 +26,7 @@ Usage: ${SCRIPT_NAME} --backend <cuda|rocm|mps> [--cuda-version <ver>] [--rocm-v
                   rocm   Install PyTorch with ROCm (Radeon/AMD)
                   mps    Install PyTorch with MPS (Apple Silicon)
 
-  --cuda-version  CUDA wheel suffix, e.g. cu126 (default: cu126)
+  --cuda-version  CUDA wheel suffix, e.g. cu130 (default: cu130)
   --rocm-version  ROCm wheel suffix, e.g. rocm6.4 (default: rocm6.4)
 
 Environment overrides:
@@ -44,7 +44,7 @@ EOF
   exit "$usage_status"
 }
 
-CUDA_VERSION="cu126"
+CUDA_VERSION="cu130"
 ROCM_VERSION="rocm6.4"
 PIP_VERSION="${PIP_VERSION:-25.1.1}"
 
@@ -333,7 +333,7 @@ check_torch_index() {
   if [[ "$BACKEND" == "cuda" ]]; then
     printf 'CUDA wheels are for Nvidia GPUs. On AMD/Radeon, rerun:\n' >&2
     printf '  ./%s --backend rocm --rocm-version %s\n\n' "$SCRIPT_NAME" "$ROCM_VERSION" >&2
-    printf 'For Nvidia CUDA, try a currently published wheel suffix such as cu126, cu128, or cu130.\n' >&2
+    printf 'For Nvidia CUDA on RTX 50-series, use a CUDA 13 wheel such as cu130.\n' >&2
   elif [[ "$BACKEND" == "rocm" ]]; then
     printf 'For AMD/Radeon, try a currently published ROCm wheel suffix such as rocm6.4.\n' >&2
   fi
@@ -381,7 +381,24 @@ else:
     print(f"GPU count     : {gpu_count}")
     if gpu_available:
         for i in range(gpu_count):
-            print(f"GPU {i}        : {torch.cuda.get_device_name(i)}")
+            capability = torch.cuda.get_device_capability(i)
+            print(
+                f"GPU {i}        : {torch.cuda.get_device_name(i)} "
+                f"(sm_{capability[0]}{capability[1]})"
+            )
+
+        try:
+            probe = torch.ones(1, device="cuda")
+            probe = probe + 1
+            torch.cuda.synchronize()
+            print(f"CUDA smoke    : ok ({probe.cpu().item():.1f})")
+        except Exception as exc:
+            raise SystemExit(
+                "CUDA smoke test failed. PyTorch can see the GPU, but the installed "
+                "wheel cannot execute kernels on it. For RTX 50-series / sm_120, "
+                "reinstall with a CUDA 13 wheel, for example: "
+                "./install.zsh --backend cuda --cuda-version cu130"
+            ) from exc
 
 print()
 PY

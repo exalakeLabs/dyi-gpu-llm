@@ -243,10 +243,46 @@ def _device_index(device: str) -> int:
     return parsed.index if parsed.index is not None else torch.cuda.current_device()
 
 
+def _verify_cuda_runtime(device: str, requested: str) -> None:
+    index = _device_index(device)
+    name = "<unknown>"
+    capability_text = "<unknown>"
+
+    try:
+        name = torch.cuda.get_device_name(index)
+        capability = torch.cuda.get_device_capability(index)
+        capability_text = f"sm_{capability[0]}{capability[1]}"
+        with torch.cuda.device(index):
+            probe = torch.ones(1, device=device)
+            probe = probe + 1
+            torch.cuda.synchronize(index)
+            _ = probe.cpu().item()
+    except Exception as exc:
+        if torch.version.hip is None and capability_text == "sm_120":
+            install_hint = (
+                "For RTX 50-series / sm_120, reinstall PyTorch with a CUDA 13 wheel:\n"
+                "  ./install.zsh --backend cuda --cuda-version cu130"
+            )
+        else:
+            install_hint = (
+                "Reinstall PyTorch with a wheel matching this GPU/backend, or set "
+                "EMBED_DEVICE=cpu to build the index without GPU acceleration."
+            )
+
+        raise SystemExit(
+            f"Embedding device {requested!r} maps to {device}, but PyTorch cannot execute "
+            f"kernels on {name} ({capability_text}).\n"
+            f"torch={torch.__version__}, torch.version.cuda={torch.version.cuda}, "
+            f"torch.version.hip={torch.version.hip}\n"
+            f"{install_hint}"
+        ) from exc
+
+
 def resolve_embed_device(device: str) -> str:
     requested = (device or "auto").strip().lower()
     if requested == "auto":
         if torch.cuda.is_available():
+            _verify_cuda_runtime("cuda", requested)
             return "cuda"
         if _mps_available():
             return "mps"
@@ -275,6 +311,7 @@ def resolve_embed_device(device: str) -> str:
                 f"Embedding device {requested!r} was requested, but only "
                 f"{torch.cuda.device_count()} CUDA/ROCm device(s) are visible."
             )
+        _verify_cuda_runtime(torch_device, requested)
         return torch_device
 
     if requested == "mps":
