@@ -10,6 +10,11 @@ ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
 BASE_MODEL = env_str("BASE_MODEL")
 GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
+GENERATOR_CPU_MEMORY = env_str("GENERATOR_CPU_MEMORY")
+GENERATOR_DEVICE_MAP = env_str("GENERATOR_DEVICE_MAP")
+GENERATOR_DTYPE = env_str("GENERATOR_DTYPE", "auto")
+GENERATOR_GPU_MEMORY = env_str("GENERATOR_GPU_MEMORY")
+GENERATOR_OFFLOAD_DIR = env_str("GENERATOR_OFFLOAD_DIR")
 
 # transformers ≥ 4.51 renamed the from_pretrained dtype kwarg from
 # `torch_dtype` to `dtype`; older builds silently ignore `dtype`.
@@ -42,9 +47,37 @@ def _rocm_supports_bf16() -> bool:
 
 def _model_dtype() -> torch.dtype:
     """Select the best dtype: bf16 on capable AMD hardware, fp16 elsewhere."""
+    if GENERATOR_DTYPE == "bf16":
+        return torch.bfloat16
+    if GENERATOR_DTYPE == "fp16":
+        return torch.float16
+    if GENERATOR_DTYPE == "fp32":
+        return torch.float32
     if _rocm_supports_bf16():
         return torch.bfloat16
     return torch.float16
+
+
+def _max_memory(gpu_memory: str = GENERATOR_GPU_MEMORY, cpu_memory: str = GENERATOR_CPU_MEMORY):
+    max_memory: dict = {}
+    if gpu_memory and torch.cuda.is_available():
+        max_memory[0] = gpu_memory
+    if cpu_memory:
+        max_memory["cpu"] = cpu_memory
+    return max_memory or None
+
+
+def _device_map(device_map: str = GENERATOR_DEVICE_MAP):
+    selected = (device_map or "").strip().lower()
+    if not selected:
+        return {"": 0} if torch.cuda.is_available() else None
+    if selected == "single":
+        return {"": 0} if torch.cuda.is_available() else {"": "cpu"}
+    if selected == "cpu":
+        return {"": "cpu"}
+    if selected == "auto":
+        return "auto"
+    return device_map
 
 
 def patch_rocm_isin() -> None:
@@ -107,16 +140,26 @@ def load_tokenizer(base_model: str = BASE_MODEL):
 
 
 def load_base_model(base_model: str = BASE_MODEL, **kwargs):
-    # device_map={"": 0} targets device 0 (works for ROCm/HIP and CUDA alike).
-    # Omitted on CPU-only builds: transformers raises when no accelerator is present.
     model_kwargs: dict = {
         _DTYPE_KWARG: _model_dtype(),
         "trust_remote_code": True,
         "low_cpu_mem_usage": True,
     }
-    if torch.cuda.is_available():
-        model_kwargs["device_map"] = {"": 0}
+    resolved_device_map = _device_map()
+    if resolved_device_map is not None:
+        model_kwargs["device_map"] = resolved_device_map
+    max_memory = _max_memory()
+    if max_memory is not None:
+        model_kwargs["max_memory"] = max_memory
+    if GENERATOR_OFFLOAD_DIR:
+        model_kwargs["offload_folder"] = GENERATOR_OFFLOAD_DIR
     model_kwargs.update(kwargs)
+    print(f"Generator device_map: {model_kwargs.get('device_map', '<default>')}")
+    print(f"Generator dtype: {model_kwargs.get(_DTYPE_KWARG)}")
+    if "max_memory" in model_kwargs:
+        print(f"Generator max_memory: {model_kwargs['max_memory']}")
+    if "offload_folder" in model_kwargs:
+        print(f"Generator offload_folder: {model_kwargs['offload_folder']}")
     return AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
 
 

@@ -11,6 +11,12 @@ fi
 GENERATOR="${GENERATOR_MODEL:-openai/gpt-oss-20b}"
 EMBED="${EMBED_MODEL:-BAAI/bge-base-en-v1.5}"
 RERANK="${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}"
+EMBED_DEVICE="${RAG_EMBED_DEVICE:-cpu}"
+GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
+GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-5GiB}"
+GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-48GiB}"
+GEN_DTYPE="${GENERATOR_DTYPE:-auto}"
+GEN_OFFLOAD_DIR="${GENERATOR_OFFLOAD_DIR:-${TMPDIR:-/tmp}/llama32-generator-offload}"
 
 case "${GENERATOR:l}" in
   gpt-oss:*)
@@ -36,9 +42,26 @@ case "${RERANK:l}" in
     ;;
 esac
 
+export RAG_EMBED_DEVICE="$EMBED_DEVICE"
+export GENERATOR_DEVICE_MAP="$GEN_DEVICE_MAP"
+export GENERATOR_GPU_MEMORY="$GEN_GPU_MEMORY"
+export GENERATOR_CPU_MEMORY="$GEN_CPU_MEMORY"
+export GENERATOR_DTYPE="$GEN_DTYPE"
+export GENERATOR_OFFLOAD_DIR="$GEN_OFFLOAD_DIR"
+mkdir -p "$GEN_OFFLOAD_DIR"
+
+print "Generator: $GENERATOR"
+print "Generator device_map: $GENERATOR_DEVICE_MAP"
+print "Generator GPU memory cap: $GENERATOR_GPU_MEMORY"
+print "Generator CPU memory cap: $GENERATOR_CPU_MEMORY"
+print "Generator dtype: $GENERATOR_DTYPE"
+print "Generator offload dir: $GENERATOR_OFFLOAD_DIR"
+print "RAG embedder: $EMBED on $RAG_EMBED_DEVICE"
+
 exec "${PYTHON:-python3}" ./src/chat_rag.py \
   --rag-dir "${RAG_DIR:-rag}" \
   --generator-model "$GENERATOR" \
   --embed-model "$EMBED" \
+  --embed-device "$EMBED_DEVICE" \
   --top-k "${RETRIEVE_K:-24}" \
   --max-new-tokens "${MAX_NEW_TOKENS:-500}"

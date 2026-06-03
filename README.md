@@ -149,6 +149,21 @@ Transformers:
 ./launch_chat.zsh
 ```
 
+On 8 GB Radeon cards such as the RX 7600, Transformers may dequantize the
+gpt-oss MXFP4 checkpoint instead of running it in-place as 4-bit weights. The
+launcher therefore defaults to a hybrid/offloaded setup:
+
+```bash
+RAG_EMBED_DEVICE=cpu
+GENERATOR_DEVICE_MAP=auto
+GENERATOR_GPU_MEMORY=5GiB
+GENERATOR_CPU_MEMORY=48GiB
+```
+
+Increase `GENERATOR_GPU_MEMORY` only if there is free VRAM after the model
+loads. Lower it to `4GiB` if ROCm still reports out-of-memory. This can run, but
+it will be much slower than native MXFP4 execution on supported hardware.
+
 ## Practical tuning tips
 
 - If you hit GPU memory errors, reduce `max_length` or increase gradient accumulation while keeping per-device batch size small.

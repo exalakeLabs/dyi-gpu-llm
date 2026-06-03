@@ -14,6 +14,7 @@ from runtime_env import env_int, env_path, env_str
 ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
 BASE_MODEL = env_str("BASE_MODEL")
 EMBED_MODEL = env_str("EMBED_MODEL")
+EMBED_DEVICE = env_str("RAG_EMBED_DEVICE", "auto")
 GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 RAG_DIR = env_path("RAG_DIR", "rag")
@@ -62,6 +63,7 @@ def main() -> int:
     parser.add_argument("--adapter-dir", default=str(ADAPTER_DIR))
     parser.add_argument("--no-adapter", action="store_true")
     parser.add_argument("--embed-model", default=EMBED_MODEL)
+    parser.add_argument("--embed-device", default=EMBED_DEVICE)
     parser.add_argument("--top-k", type=int, default=RETRIEVE_K)
     parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     parser.add_argument("--system-prompt", default=SYSTEM_PROMPT)
@@ -76,7 +78,9 @@ def main() -> int:
     index = faiss.read_index(str(index_file))
     validate_embedding_model(args.embed_model)
     validate_generator_model(args.generator_model)
-    embedder = SentenceTransformer(args.embed_model)
+    embed_device = None if args.embed_device == "auto" else args.embed_device
+    print(f"Loading embedder: {args.embed_model} on {embed_device or 'auto'}")
+    embedder = SentenceTransformer(args.embed_model, device=embed_device)
 
     tokenizer, model = load_generation_model(
         base_model=args.generator_model,
