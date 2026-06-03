@@ -8,6 +8,9 @@ RAW_TEXT_OUTPUT_DIR="${RAWTEXT_DIR:-}"
 RUN_GUTENBERG=1
 RUN_WIKIPEDIA=1
 RUN_HTML=0
+WIKI_CRAWL_DEPTH="${WIKI_CRAWL_DEPTH:-1}"
+WIKI_CRAWL_MAX_PAGES="${WIKI_CRAWL_MAX_PAGES:-240}"
+WIKI_CRAWL_LINKS_PER_PAGE="${WIKI_CRAWL_LINKS_PER_PAGE:-35}"
 
 usage() {
   cat <<'EOF'
@@ -18,6 +21,9 @@ Options:
   --skip-gutenberg      Do not download Project Gutenberg books.
   --skip-wikipedia      Do not download Wikipedia plaintext pages.
   --run-html            Download and convert URLs listed in HTML_URLS.
+  --wiki-crawl-depth N  Wikipedia link depth from each seed page (default: 1).
+  --wiki-crawl-max N    Max crawled Wikipedia pages per topic crawl (default: 240).
+  --wiki-crawl-links N  Max linked pages enqueued per crawled page (default: 35).
   -h, --help            Show this help.
 
 Environment:
@@ -43,6 +49,18 @@ while [[ $# -gt 0 ]]; do
     --run-html)
       RUN_HTML=1
       shift
+      ;;
+    --wiki-crawl-depth)
+      WIKI_CRAWL_DEPTH="${2:?missing value for --wiki-crawl-depth}"
+      shift 2
+      ;;
+    --wiki-crawl-max)
+      WIKI_CRAWL_MAX_PAGES="${2:?missing value for --wiki-crawl-max}"
+      shift 2
+      ;;
+    --wiki-crawl-links)
+      WIKI_CRAWL_LINKS_PER_PAGE="${2:?missing value for --wiki-crawl-links}"
+      shift 2
       ;;
     -h|--help)
       usage
@@ -104,6 +122,81 @@ WIKIPEDIA_TITLES=(
   "Economics"
   "Computer science"
   "Software engineering"
+  "Data science"
+  "Probability theory"
+  "Linear algebra"
+  "Optimization"
+  "Algorithms"
+  "Database"
+  "Distributed computing"
+  "Cybersecurity"
+  "Chemical compound"
+  "Chemistry"
+  "Organic chemistry"
+  "Physical chemistry"
+  "Biochemistry"
+  "Polymer chemistry"
+  "Medicinal chemistry"
+  "Quantum mechanics"
+  "Quantum field theory"
+  "Particle physics"
+  "Condensed matter physics"
+  "Atomic physics"
+  "Optics"
+  "Automotive engineering"
+  "Automobile"
+  "Internal combustion engine"
+  "Electric vehicle"
+  "Hybrid vehicle"
+  "Vehicle dynamics"
+  "Automotive industry"
+)
+
+WIKIPEDIA_CRAWL_SEEDS=(
+  "organic|Organic chemistry|Functional group|Organic reaction|Stereochemistry|Aromaticity|Polymer chemistry|Medicinal chemistry"
+  "quantum|Quantum mechanics|Quantum physics|Quantum field theory|Particle physics|Condensed matter physics|Atomic physics|Quantum information"
+  "automotive|Automotive engineering|Automobile|Internal combustion engine|Electric vehicle|Hybrid vehicle|Vehicle dynamics|Automotive industry"
+)
+
+ORGANIC_CRAWL_TERMS=(
+  "organic"
+  "chem"
+  "reaction"
+  "compound"
+  "carbon"
+  "hydrocarbon"
+  "functional"
+  "synthesis"
+  "polymer"
+  "aromatic"
+  "stereo"
+)
+
+QUANTUM_CRAWL_TERMS=(
+  "quantum"
+  "particle"
+  "field"
+  "atom"
+  "atomic"
+  "photon"
+  "electron"
+  "wave"
+  "physics"
+  "mechanics"
+)
+
+AUTOMOTIVE_CRAWL_TERMS=(
+  "automotive"
+  "automobile"
+  "vehicle"
+  "engine"
+  "motor"
+  "car"
+  "transmission"
+  "brake"
+  "tire"
+  "electric"
+  "hybrid"
 )
 
 HTML_URLS=(
@@ -145,6 +238,8 @@ download_gutenberg() {
 
 download_wikipedia() {
   local title
+  local group label rest seed term
+  local -a cmd seeds terms
 
   for title in "${WIKIPEDIA_TITLES[@]}"; do
     run_cmd \
@@ -152,6 +247,46 @@ download_wikipedia() {
       "$ROOT/src/download_web_text.py" \
       --wikipedia-title "$title" \
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
+  done
+
+  for group in "${WIKIPEDIA_CRAWL_SEEDS[@]}"; do
+    label="${group%%|*}"
+    rest="${group#*|}"
+    seeds=("${(@ps:|:)rest}")
+
+    case "$label" in
+      organic)
+        terms=("${ORGANIC_CRAWL_TERMS[@]}")
+        ;;
+      quantum)
+        terms=("${QUANTUM_CRAWL_TERMS[@]}")
+        ;;
+      automotive)
+        terms=("${AUTOMOTIVE_CRAWL_TERMS[@]}")
+        ;;
+      *)
+        terms=()
+        ;;
+    esac
+
+    cmd=(
+      "$PYTHON"
+      "$ROOT/src/download_web_text.py"
+      --output-dir "$RAW_TEXT_OUTPUT_DIR"
+      --crawl-depth "$WIKI_CRAWL_DEPTH"
+      --crawl-max-pages "$WIKI_CRAWL_MAX_PAGES"
+      --crawl-links-per-page "$WIKI_CRAWL_LINKS_PER_PAGE"
+    )
+
+    for seed in "${seeds[@]}"; do
+      cmd+=(--wikipedia-crawl-title "$seed")
+    done
+
+    for term in "${terms[@]}"; do
+      cmd+=(--crawl-include "$term")
+    done
+
+    run_cmd "${cmd[@]}"
   done
 }
 
@@ -171,6 +306,7 @@ mkdir -p "$RAW_TEXT_OUTPUT_DIR"
 
 print "Raw text output: $RAW_TEXT_OUTPUT_DIR"
 print "Python: $PYTHON"
+print "Wikipedia crawl: depth=$WIKI_CRAWL_DEPTH max_pages=$WIKI_CRAWL_MAX_PAGES links_per_page=$WIKI_CRAWL_LINKS_PER_PAGE"
 
 if (( RUN_GUTENBERG )); then
   print
