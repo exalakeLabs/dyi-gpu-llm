@@ -65,6 +65,19 @@ fi
 PYTHON="${PYTHON:-python}"
 RAW_TEXT_OUTPUT_DIR="${RAW_TEXT_OUTPUT_DIR:-${RAWTEXT_DIR:-text}}"
 
+if ! "$PYTHON" - <<'PY'
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path.cwd() / "src"))
+import http_client
+PY
+then
+  print -u2 "error: selected Python cannot import the raw-text downloader helpers: $PYTHON"
+  print -u2 "Run ./install.zsh or set PYTHON=/path/to/.venv/bin/python and retry."
+  exit 1
+fi
+
 GUTENBERG_TASKS=(
   "science||400"
   "mathematics||250"
@@ -157,6 +170,7 @@ download_html() {
 mkdir -p "$RAW_TEXT_OUTPUT_DIR"
 
 print "Raw text output: $RAW_TEXT_OUTPUT_DIR"
+print "Python: $PYTHON"
 
 if (( RUN_GUTENBERG )); then
   print

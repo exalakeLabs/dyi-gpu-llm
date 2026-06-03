@@ -5,8 +5,6 @@ import re
 from pathlib import Path
 from typing import Optional
 
-import requests
-
 try:
     import truststore
 
@@ -14,6 +12,7 @@ try:
 except ModuleNotFoundError:
     pass
 
+from http_client import get
 from runtime_env import env_path
 
 RAWTEXT_DIR = env_path("RAWTEXT_DIR", "text")
@@ -53,8 +52,7 @@ def iter_books(query: str, topic: Optional[str], language: str, max_books: int):
     yielded = 0
 
     while next_url and yielded < max_books:
-        resp = requests.get(next_url, params=params if next_url == API_BASE else None, timeout=60)
-        resp.raise_for_status()
+        resp = get(next_url, params=params if next_url == API_BASE else None, timeout=60)
         data = resp.json()
 
         for book in data.get("results", []):
@@ -104,8 +102,7 @@ def main():
             continue
 
         print(f"[download] #{book_id} {title} | {authors}")
-        r = requests.get(url, timeout=120)
-        r.raise_for_status()
+        r = get(url, timeout=120)
         path.write_text(r.text, encoding="utf-8", errors="ignore")
         count += 1
 

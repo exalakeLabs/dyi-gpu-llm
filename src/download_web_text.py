@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import Iterable
 from urllib.parse import quote, urlparse
 
-import requests
-
 try:
     import truststore
 
@@ -19,6 +17,7 @@ try:
 except ModuleNotFoundError:
     pass
 
+from http_client import get
 from runtime_env import env_path
 
 RAWTEXT_DIR = env_path("RAWTEXT_DIR", "text")
@@ -128,24 +127,21 @@ class PlainTextHTMLParser(HTMLParser):
 
 
 def request_json(url: str, *, params: dict[str, str], timeout: int) -> dict:
-    response = requests.get(
+    response = get(
         url,
         headers={"User-Agent": USER_AGENT},
         params=params,
         timeout=timeout,
     )
-    response.raise_for_status()
     return response.json()
 
 
 def request_text(url: str, *, timeout: int) -> str:
-    response = requests.get(
+    response = get(
         url,
         headers={"User-Agent": USER_AGENT},
         timeout=timeout,
     )
-    response.raise_for_status()
-    response.encoding = response.encoding or "utf-8"
     return response.text
 
 
