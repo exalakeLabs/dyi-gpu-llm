@@ -6,7 +6,6 @@ from runtime_env import env_int, env_path, env_str
 
 ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
 BASE_MODEL = env_str("BASE_MODEL")
-GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
 GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
@@ -20,7 +19,6 @@ def main():
         default=GENERATOR_MODEL,
         help="Base model name or path",
     )
-    parser.add_argument("--generator-backend", default=GENERATOR_BACKEND)
     parser.add_argument(
         "--adapter",
         default=str(ADAPTER_DIR),
@@ -48,7 +46,6 @@ def main():
         base_model=args.generator_model,
         adapter_path=args.adapter,
         use_adapter=not args.no_adapter,
-        backend=args.generator_backend,
     )
 
     response = generate_text(

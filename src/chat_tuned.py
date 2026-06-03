@@ -10,7 +10,6 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import __version__ as TRANSFORMERS_VERSION
 
-from model_runtime import generate_text, load_generation_model
 from runtime_env import env_int, env_str
 
 DEFAULT_ATTENTION = env_str("DEFAULT_ATTENTION", "auto")
@@ -18,8 +17,6 @@ DEFAULT_BACKEND = env_str("DEFAULT_BACKEND", "rocm:0")
 DEFAULT_DTYPE = env_str("DEFAULT_DTYPE", "auto")
 DEFAULT_MODEL_PATH = env_str("DEFAULT_MODEL_PATH")
 DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
-GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
-GENERATOR_MODEL = env_str("GENERATOR_MODEL")
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 _DTYPES = {
@@ -274,19 +271,6 @@ def _generate_response(tokenizer, model, prompt: str, args) -> str:
     return tokenizer.decode(response, skip_special_tokens=True).strip()
 
 
-def _generate_ollama_response(tokenizer, model, prompt: str, args) -> str:
-    return generate_text(
-        tokenizer,
-        model,
-        _build_messages(args.system_prompt, prompt),
-        max_new_tokens=args.max_new_tokens,
-        do_sample=args.temperature > 0,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        repetition_penalty=args.repetition_penalty,
-    )
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Chat with the continued-pretrained model on an RTX-class CUDA GPU."
@@ -311,17 +295,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--backend",
         default=DEFAULT_BACKEND,
         help="Inference backend: rocm:<id>, cuda:<id>, or cpu.",
-    )
-    parser.add_argument(
-        "--generator-backend",
-        choices=("transformers", "ollama", "auto"),
-        default=GENERATOR_BACKEND,
-        help="Generation provider for runtime chat. Ollama uses GENERATOR_MODEL.",
-    )
-    parser.add_argument(
-        "--generator-model",
-        default=GENERATOR_MODEL,
-        help="Generator model name for Ollama or auto runtime backends.",
     )
     parser.add_argument(
         "--dtype",
@@ -382,29 +355,9 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _build_parser().parse_args()
 
-    print(f"Generator backend: {args.generator_backend}")
-    print(f"Generator model: {args.generator_model}")
     print(f"Model path: {args.model_path}")
     print(f"Tokenizer path: {args.tokenizer_path}")
     print(f"Backend: {args.backend}")
-
-    # if args.generator_backend != "transformers":
-
-    #     print("RUNNING AS TRANSFORMERS")
-    #     tokenizer, model = load_generation_model(
-    #         base_model=args.generator_model,
-    #         backend=args.generator_backend,
-    #         use_adapter=False,
-    #     )
-
-    #     while True:
-    #         prompt = input("\nPrompt> ").strip()
-    #         if not prompt or prompt.lower() in {"exit", "quit"}:
-    #             break
-
-    #         print("\n" + _generate_ollama_response(tokenizer, model, prompt, args))
-
-    #     return 0
 
     backend_name, device_id = _parse_backend(args.backend)
     dtype = _resolve_dtype(args.dtype, backend_name)

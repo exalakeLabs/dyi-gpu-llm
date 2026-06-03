@@ -19,12 +19,6 @@ def main():
         help="Transformers model name or path",
     )
     parser.add_argument(
-        "--generator-backend",
-        default="transformers",
-        choices=["transformers"],
-        help="Runtime backend for this base-model test.",
-    )
-    parser.add_argument(
         "--prompt",
         default="Explain RAG indexing in plain English.",
         help="Prompt to test",
@@ -39,7 +33,6 @@ def main():
 
     tokenizer, model = load_generation_model(
         base_model=args.generator_model,
-        backend=args.generator_backend,
         use_adapter=False,
     )
 

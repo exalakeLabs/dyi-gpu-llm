@@ -1,7 +1,8 @@
 # Training And RAG Guide
 
-This repository is set up to run RAG/runtime generation through **gpt-oss:20b**
-via Ollama, while keeping BGE models for embedding and reranking.
+This repository is set up to run RAG/runtime generation through
+**openai/gpt-oss-20b** with Transformers, while keeping BGE models for
+embedding and reranking.
 
 ## RAG With Prepared Text And gpt-oss
 
@@ -127,29 +128,20 @@ Serving and chat entrypoints share the runtime model loader in `src/model_runtim
 
 ## GPT-OSS Runtime
 
-Install and pull the Ollama model once:
+The default runtime model settings live in `.env.default`:
 
 ```bash
-ollama pull gpt-oss:20b
-```
-
-The default runtime settings live in `.env.default`:
-
-```bash
-GENERATOR_BACKEND=ollama
-GENERATOR_MODEL=gpt-oss:20b
+GENERATOR_MODEL=openai/gpt-oss-20b
 BASE_MODEL=openai/gpt-oss-20b
 ```
 
-Build the RAG index with the embedding model, then launch chat:
+Build the RAG index with the embedding model, then launch chat with
+Transformers:
 
 ```bash
 ./build_rag_index.zsh
 ./launch_chat.zsh
 ```
-
-Use `BASE_MODEL=openai/gpt-oss-20b` only for code paths that require a
-Transformers model id, such as tokenizer/corpus generation or fine-tuning.
 
 ## Practical tuning tips
 
