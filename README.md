@@ -1,6 +1,7 @@
 # Training And RAG Guide
 
-This repository is already set up to fine-tune **Qwen/Qwen2.5-3B-Instruct** with LoRA.
+This repository is set up to run RAG/runtime generation through **gpt-oss:20b**
+via Ollama, while keeping BGE models for embedding and reranking.
 
 ## RAG With Prepared Text And gpt-oss
 
@@ -79,18 +80,18 @@ If you already have `data/train.jsonl` and only need to train:
 python src/train_lora_gpu.py
 ```
 
-Default training settings in `src/train_lora_gpu.py`:
+Default training settings come from `.env.default`:
 
-- Base model: `Qwen/Qwen2.5-3B-Instruct`
-- Data file: `data/train.jsonl`
-- Output dir: `output/lora`
-- LoRA targets: `q_proj`, `k_proj`, `v_proj`, `o_proj`
+- Base model: `openai/gpt-oss-20b`
+- Data file: `${CORPUS_DIR}/train.jsonl`
+- Output dir: `${MODEL_DIR}/output_partial`
+- LoRA targets: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
 - Batch size: `1` (with grad accumulation `8`)
 - Epochs: `1`
 
 Final adapter output is saved at:
 
-- `output/lora/final/`
+- `${ADAPTER_DIR}`
 
 ## Continued Pretraining
 
@@ -123,6 +124,32 @@ uvicorn --app-dir src serve_tuned:app --host 127.0.0.1 --port 8000
 ```
 
 Serving and chat entrypoints share the runtime model loader in `src/model_runtime.py`.
+
+## GPT-OSS Runtime
+
+Install and pull the Ollama model once:
+
+```bash
+ollama pull gpt-oss:20b
+```
+
+The default runtime settings live in `.env.default`:
+
+```bash
+GENERATOR_BACKEND=ollama
+GENERATOR_MODEL=gpt-oss:20b
+BASE_MODEL=openai/gpt-oss-20b
+```
+
+Build the RAG index with the embedding model, then launch chat:
+
+```bash
+./build_rag_index.zsh
+./launch_chat.zsh
+```
+
+Use `BASE_MODEL=openai/gpt-oss-20b` only for code paths that require a
+Transformers model id, such as tokenizer/corpus generation or fine-tuning.
 
 ## Practical tuning tips
 

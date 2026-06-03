@@ -26,11 +26,12 @@ Usage: ${SCRIPT_NAME} --backend <cuda|rocm|mps> [--cuda-version <ver>] [--rocm-v
                   rocm   Install PyTorch with ROCm (Radeon/AMD)
                   mps    Install PyTorch with MPS (Apple Silicon)
 
-  --cuda-version  CUDA wheel suffix, e.g. cu124 (default: cu124)
-  --rocm-version  ROCm wheel suffix, e.g. rocm6.2 (default: rocm6.2)
+  --cuda-version  CUDA wheel suffix, e.g. cu130 (default: cu130)
+  --rocm-version  ROCm wheel suffix, e.g. rocm6.4 (default: rocm6.4)
 
 Environment overrides:
   PYTHON             Python executable used to create the venv (default: python3)
+  PIP_VERSION        Pip version installed in the venv, or latest (default: 25.1.1)
   VENV_DIR           Virtual environment directory (default: .venv)
   REQUIREMENTS_FILE  Pip requirements file (default: requirements.txt)
   ENV_FILE           Environment file to update (default: .env)
@@ -43,8 +44,9 @@ EOF
   exit "$usage_status"
 }
 
-CUDA_VERSION="cu124"
-ROCM_VERSION="rocm6.2"
+CUDA_VERSION="cu130"
+ROCM_VERSION="rocm6.4"
+PIP_VERSION="${PIP_VERSION:-25.1.1}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -295,14 +297,64 @@ fi
 
 "$PYTHON_PATH" -m venv "$VENV_PATH"
 source "$VENV_PATH/bin/activate"
-python -m pip install -U pip
-
-pip_args=(-r "$REQUIREMENTS_FILE")
-if [[ -n "$TORCH_INDEX" ]]; then
-  pip_args+=(--extra-index-url "$TORCH_INDEX")
+if [[ "$PIP_VERSION" == "latest" ]]; then
+  python -m pip install -U pip wheel
+else
+  python -m pip install -U "pip==${PIP_VERSION}" wheel
 fi
 
-python -m pip install "${pip_args[@]}"
+print_python_environment() {
+  python - <<'PY'
+import sys
+import sysconfig
+
+print()
+print("Python environment:")
+print(f"  executable : {sys.executable}")
+print(f"  version    : {sys.version.split()[0]}")
+print(f"  platform   : {sysconfig.get_platform()}")
+print(f"  cache tag  : {sys.implementation.cache_tag}")
+PY
+}
+
+check_torch_index() {
+  local index_url="$1"
+  local output
+
+  output="$(python -m pip index versions torch --index-url "$index_url" 2>&1 || true)"
+  if [[ "$output" == *"Available versions:"* ]]; then
+    return
+  fi
+
+  printf '\nerror: no compatible torch wheels were found for this Python/platform/backend.\n' >&2
+  printf 'Selected PyTorch index: %s\n\n' "$index_url" >&2
+  printf '%s\n\n' "$output" >&2
+
+  if [[ "$BACKEND" == "cuda" ]]; then
+    printf 'CUDA wheels are for Nvidia GPUs. On AMD/Radeon, rerun:\n' >&2
+    printf '  ./%s --backend rocm --rocm-version %s\n\n' "$SCRIPT_NAME" "$ROCM_VERSION" >&2
+    printf 'For Nvidia CUDA on RTX 50-series, use a CUDA 13 wheel such as cu130.\n' >&2
+  elif [[ "$BACKEND" == "rocm" ]]; then
+    printf 'For AMD/Radeon, try a currently published ROCm wheel suffix such as rocm6.4.\n' >&2
+  fi
+
+  exit 1
+}
+
+print_python_environment
+
+if [[ -n "$TORCH_INDEX" ]]; then
+  printf '\nInstalling PyTorch from backend-specific index: %s\n' "$TORCH_INDEX"
+  check_torch_index "$TORCH_INDEX"
+  python -m pip install --index-url "$TORCH_INDEX" torch torchvision torchaudio
+
+  REQUIREMENTS_NO_TORCH="$(mktemp)"
+  trap 'rm -f "$REQUIREMENTS_NO_TORCH"' EXIT
+  grep -Ev '^[[:space:]]*(torch|torchvision|torchaudio)([<>=!~[:space:]]|$)' "$REQUIREMENTS_FILE" > "$REQUIREMENTS_NO_TORCH"
+  python -m pip install -r "$REQUIREMENTS_NO_TORCH"
+else
+  python -m pip install -r "$REQUIREMENTS_FILE"
+fi
 
 # ---------------------------------------------------------------------------
 # Environment check
@@ -329,7 +381,24 @@ else:
     print(f"GPU count     : {gpu_count}")
     if gpu_available:
         for i in range(gpu_count):
-            print(f"GPU {i}        : {torch.cuda.get_device_name(i)}")
+            capability = torch.cuda.get_device_capability(i)
+            print(
+                f"GPU {i}        : {torch.cuda.get_device_name(i)} "
+                f"(sm_{capability[0]}{capability[1]})"
+            )
+
+        try:
+            probe = torch.ones(1, device="cuda")
+            probe = probe + 1
+            torch.cuda.synchronize()
+            print(f"CUDA smoke    : ok ({probe.cpu().item():.1f})")
+        except Exception as exc:
+            raise SystemExit(
+                "CUDA smoke test failed. PyTorch can see the GPU, but the installed "
+                "wheel cannot execute kernels on it. For RTX 50-series / sm_120, "
+                "reinstall with a CUDA 13 wheel, for example: "
+                "./install.zsh --backend cuda --cuda-version cu130"
+            ) from exc
 
 print()
 PY

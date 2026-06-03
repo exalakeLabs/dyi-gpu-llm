@@ -10,13 +10,16 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import __version__ as TRANSFORMERS_VERSION
 
+from model_runtime import generate_text, load_generation_model
 from runtime_env import env_int, env_str
 
 DEFAULT_ATTENTION = env_str("DEFAULT_ATTENTION", "auto")
-DEFAULT_BACKEND = env_str("DEFAULT_BACKEND", "cuda:0")
+DEFAULT_BACKEND = env_str("DEFAULT_BACKEND", "rocm:0")
 DEFAULT_DTYPE = env_str("DEFAULT_DTYPE", "auto")
 DEFAULT_MODEL_PATH = env_str("DEFAULT_MODEL_PATH")
 DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
+GENERATOR_BACKEND = env_str("GENERATOR_BACKEND", "transformers")
+GENERATOR_MODEL = env_str("GENERATOR_MODEL")
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 _DTYPES = {
@@ -62,6 +65,8 @@ def _has_tokenizer_files(path: Path) -> bool:
 def _resolve_model_path(model_path: str, checkpoint: str) -> Path:
     base = Path(model_path).expanduser()
 
+    print(f"Model path: {base}")
+
     if checkpoint == "root":
         return base
 
@@ -101,11 +106,11 @@ def _parse_backend(backend: str) -> tuple[str, int | None]:
 
     if name == "cpu":
         return name, None
-    if name == "cuda":
+    if name in {"cuda", "rocm", "hip"}:
         return name, int(parts[1]) if len(parts) > 1 else 0
 
     raise argparse.ArgumentTypeError(
-        f"Unknown backend {backend!r}. Use cuda, cuda:<id>, or cpu."
+        f"Unknown backend {backend!r}. Use rocm, rocm:<id>, cuda, cuda:<id>, or cpu."
     )
 
 
@@ -120,9 +125,15 @@ def _resolve_dtype(dtype_name: str, backend_name: str) -> torch.dtype:
     return torch.float16
 
 
-def _configure_cuda(device_id: int, tf32: bool) -> None:
+def _configure_accelerator(backend_name: str, device_id: int, tf32: bool) -> None:
     if not torch.cuda.is_available():
-        raise RuntimeError("CUDA backend requested, but torch.cuda.is_available() is false.")
+        raise RuntimeError(
+            f"{backend_name.upper()} backend requested, but torch.cuda.is_available() is false."
+        )
+    if backend_name in {"rocm", "hip"} and torch.version.hip is None:
+        raise RuntimeError(
+            f"{backend_name.upper()} backend requested, but this PyTorch build is not ROCm/HIP."
+        )
 
     torch.cuda.set_device(device_id)
     torch.backends.cuda.matmul.allow_tf32 = tf32
@@ -138,7 +149,8 @@ def _configure_cuda(device_id: int, tf32: bool) -> None:
 
     props = torch.cuda.get_device_properties(device_id)
     total_gb = props.total_memory / (1024**3)
-    print(f"CUDA device {device_id}: {props.name} ({total_gb:.1f} GiB)")
+    backend_label = "ROCm" if torch.version.hip else "CUDA"
+    print(f"{backend_label} device {device_id}: {props.name} ({total_gb:.1f} GiB)")
     print(f"TF32 enabled: {tf32}")
 
 
@@ -217,11 +229,15 @@ def _input_device(model) -> torch.device:
         return next(model.parameters()).device
 
 
-def _format_messages(tokenizer, system_prompt: str, user_prompt: str) -> str:
-    messages = [
+def _build_messages(system_prompt: str, user_prompt: str) -> list[dict[str, str]]:
+    return [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
+
+
+def _format_messages(tokenizer, system_prompt: str, user_prompt: str) -> str:
+    messages = _build_messages(system_prompt, user_prompt)
 
     if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
         return tokenizer.apply_chat_template(
@@ -258,6 +274,19 @@ def _generate_response(tokenizer, model, prompt: str, args) -> str:
     return tokenizer.decode(response, skip_special_tokens=True).strip()
 
 
+def _generate_ollama_response(tokenizer, model, prompt: str, args) -> str:
+    return generate_text(
+        tokenizer,
+        model,
+        _build_messages(args.system_prompt, prompt),
+        max_new_tokens=args.max_new_tokens,
+        do_sample=args.temperature > 0,
+        temperature=args.temperature,
+        top_p=args.top_p,
+        repetition_penalty=args.repetition_penalty,
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Chat with the continued-pretrained model on an RTX-class CUDA GPU."
@@ -281,7 +310,18 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backend",
         default=DEFAULT_BACKEND,
-        help="Inference backend. Default: cuda:0 for the RTX 5070.",
+        help="Inference backend: rocm:<id>, cuda:<id>, or cpu.",
+    )
+    parser.add_argument(
+        "--generator-backend",
+        choices=("transformers", "ollama", "auto"),
+        default=GENERATOR_BACKEND,
+        help="Generation provider for runtime chat. Ollama uses GENERATOR_MODEL.",
+    )
+    parser.add_argument(
+        "--generator-model",
+        default=GENERATOR_MODEL,
+        help="Generator model name for Ollama or auto runtime backends.",
     )
     parser.add_argument(
         "--dtype",
@@ -342,10 +382,34 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = _build_parser().parse_args()
 
+    print(f"Generator backend: {args.generator_backend}")
+    print(f"Generator model: {args.generator_model}")
+    print(f"Model path: {args.model_path}")
+    print(f"Tokenizer path: {args.tokenizer_path}")
+    print(f"Backend: {args.backend}")
+
+    # if args.generator_backend != "transformers":
+
+    #     print("RUNNING AS TRANSFORMERS")
+    #     tokenizer, model = load_generation_model(
+    #         base_model=args.generator_model,
+    #         backend=args.generator_backend,
+    #         use_adapter=False,
+    #     )
+
+    #     while True:
+    #         prompt = input("\nPrompt> ").strip()
+    #         if not prompt or prompt.lower() in {"exit", "quit"}:
+    #             break
+
+    #         print("\n" + _generate_ollama_response(tokenizer, model, prompt, args))
+
+    #     return 0
+
     backend_name, device_id = _parse_backend(args.backend)
     dtype = _resolve_dtype(args.dtype, backend_name)
-    if backend_name == "cuda":
-        _configure_cuda(device_id or 0, args.tf32)
+    if backend_name in {"cuda", "rocm", "hip"}:
+        _configure_accelerator(backend_name, device_id or 0, args.tf32)
 
     model_path = _resolve_model_path(args.model_path, args.checkpoint)
     tokenizer_path = _resolve_tokenizer_path(model_path, args.tokenizer_path)
