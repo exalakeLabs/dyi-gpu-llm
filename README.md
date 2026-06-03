@@ -1,6 +1,44 @@
-# Training Guide (LoRA)
+# Training And RAG Guide
 
 This repository is already set up to fine-tune **Qwen/Qwen2.5-3B-Instruct** with LoRA.
+
+## RAG With Prepared Text And gpt-oss
+
+Put cleaned source `.txt` files under `prepared/`, or set `PREPARED_DIR` in `.env`.
+Then build the FAISS index:
+
+```bash
+./build_rag_index.zsh
+```
+
+That writes:
+
+- `rag/index.faiss`
+- `rag/chunks.jsonl`
+- `rag/index_config.json`
+
+Ask gpt-oss questions through the index:
+
+```bash
+python3 src/teach_gpt_oss_rag.py --question "What does the prepared material say about this topic?"
+```
+
+The script defaults to `openai/gpt-oss-20b`. Override it with:
+
+```bash
+python3 src/teach_gpt_oss_rag.py --model openai/gpt-oss-120b
+```
+
+To inspect the exact instruction prompt and retrieved passages without loading
+the model:
+
+```bash
+python3 src/teach_gpt_oss_rag.py --dry-run --question "What should I know?"
+python3 src/teach_gpt_oss_rag.py --print-teaching-prompt
+```
+
+This does not fine-tune gpt-oss. It "teaches" the model at inference time by
+retrieving relevant passages and wrapping them in strict grounding instructions.
 
 ## 1) Install dependencies
 

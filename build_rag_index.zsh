@@ -4,12 +4,18 @@ set -euo pipefail
 ROOT="${0:A:h}"
 cd "$ROOT"
 
-python ./src/clean_text.py
+INPUT_DIR="${1:-${PREPARED_DIR:-prepared}}"
+OUTPUT_DIR="${2:-${RAG_DIR:-rag}}"
+EMBED="${EMBED_MODEL:-BAAI/bge-base-en-v1.5}"
+CHUNK_SIZE="${CHUNK_SIZE_CHARS:-1800}"
+OVERLAP="${OVERLAP_CHARS:-250}"
+BATCH="${BATCH_SIZE:-32}"
+PYTHON_BIN="${PYTHON:-python3}"
 
-python ./src/index_builder.py \
-  --input-dir $PREPARED_DIR \
-  --output-dir $RAG_DIR \
-  --embed-model $EMBED_MODEL \
-  --chunk-size-chars $CHUNK_SIZE_CHARS \
-  --overlap-chars $OVERLAP_CHARS \
-  --batch-size $BATCH_SIZE
+"$PYTHON_BIN" ./src/index_builder.py \
+  --input-dir "$INPUT_DIR" \
+  --output-dir "$OUTPUT_DIR" \
+  --embed-model "$EMBED" \
+  --chunk-size-chars "$CHUNK_SIZE" \
+  --overlap-chars "$OVERLAP" \
+  --batch-size "$BATCH"
