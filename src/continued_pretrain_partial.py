@@ -75,6 +75,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
+from model_runtime import patch_rocm_grouped_mm, patch_rocm_isin
 from runtime_env import env_float, env_int, env_str
 
 DEFAULT_ATTENTION = env_str("DEFAULT_ATTENTION", "auto")
@@ -793,6 +794,8 @@ def main():
         tf32=args.tf32,
         float32_matmul_precision=args.float32_matmul_precision,
     )
+    patch_rocm_isin()
+    patch_rocm_grouped_mm()
 
     # ========================================================
     # Load packed token corpus

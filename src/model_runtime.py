@@ -84,6 +84,27 @@ def patch_rocm_isin() -> None:
     torch.isin = safe_isin
 
 
+def patch_rocm_grouped_mm() -> None:
+    """
+    ROCm PyTorch exposes grouped_mm APIs but raises at runtime. Force transformers
+    MoE layers to use the grouped_mm_fallback implementation instead.
+    """
+    if not is_rocm():
+        return
+    try:
+        from transformers.integrations import moe as moe_integration
+    except ImportError:
+        return
+    if getattr(moe_integration, "_llama_local_grouped_mm_patched", False):
+        return
+
+    def _can_use_grouped_mm(*_args, **_kwargs) -> bool:
+        return False
+
+    moe_integration._can_use_grouped_mm = _can_use_grouped_mm
+    moe_integration._llama_local_grouped_mm_patched = True
+
+
 class OllamaGenerationRuntime:
     def __init__(
         self,
@@ -186,6 +207,7 @@ def load_generation_model(
         return None, OllamaGenerationRuntime(base_model)
 
     patch_rocm_isin()
+    patch_rocm_grouped_mm()
     tokenizer = load_tokenizer(base_model)
     model = load_base_model(base_model, **model_kwargs)
 

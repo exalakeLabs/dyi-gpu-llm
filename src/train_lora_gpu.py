@@ -20,7 +20,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
-from model_runtime import is_rocm, patch_rocm_isin
+from model_runtime import is_rocm, patch_rocm_grouped_mm, patch_rocm_isin
 from runtime_env import env_float, env_int, env_path, env_str
 
 BASE_MODEL = env_str("BASE_MODEL")
@@ -75,6 +75,7 @@ def configure_gpu_backend() -> str:
         torch.backends.cudnn.allow_tf32 = True
     else:
         patch_rocm_isin()
+        patch_rocm_grouped_mm()
     return GPU_BACKEND
 
 
