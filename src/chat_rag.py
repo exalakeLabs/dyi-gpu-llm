@@ -8,6 +8,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from model_runtime import generate_text, load_generation_model
+from rag_model_config import validate_embedding_model, validate_generator_model
 from runtime_env import env_int, env_path, env_str
 
 ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
@@ -73,6 +74,8 @@ def main() -> int:
 
     rows = load_chunks(chunks_file)
     index = faiss.read_index(str(index_file))
+    validate_embedding_model(args.embed_model)
+    validate_generator_model(args.generator_model)
     embedder = SentenceTransformer(args.embed_model)
 
     tokenizer, model = load_generation_model(

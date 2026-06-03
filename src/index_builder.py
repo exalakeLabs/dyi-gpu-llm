@@ -28,6 +28,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
+from rag_model_config import validate_embedding_model
 from runtime_env import env_int, env_list, env_path, env_str
 
 BATCH_SIZE = env_int("BATCH_SIZE", 32)
@@ -455,6 +456,7 @@ def main():
     if not files:
         raise SystemExit(f"No .txt files found in {input_dir}")
 
+    validate_embedding_model(args.embed_model)
     embed_device = resolve_embed_device(args.device)
     print(f"Loading embedding model: {args.embed_model}")
     print(f"Embedding device: {describe_embed_device(embed_device)}")

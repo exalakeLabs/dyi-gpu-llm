@@ -2,6 +2,7 @@
 
 import argparse
 from model_runtime import generate_text, load_generation_model
+from rag_model_config import validate_generator_model
 from runtime_env import env_int, env_str
 
 BASE_MODEL = env_str("BASE_MODEL")
@@ -31,6 +32,7 @@ def main():
 
     args = parser.parse_args()
 
+    validate_generator_model(args.generator_model)
     tokenizer, model = load_generation_model(
         base_model=args.generator_model,
         use_adapter=False,

@@ -131,9 +131,15 @@ Serving and chat entrypoints share the runtime model loader in `src/model_runtim
 The default runtime model settings live in `.env.default`:
 
 ```bash
+EMBED_MODEL=BAAI/bge-base-en-v1.5
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 GENERATOR_MODEL=openai/gpt-oss-20b
 BASE_MODEL=openai/gpt-oss-20b
 ```
+
+`EMBED_MODEL` and `RERANKER_MODEL` must stay on embedding/reranking models.
+Do not point them at gpt-oss; that will try to load the generator as an
+embedder and can exhaust GPU memory during index builds.
 
 Build the RAG index with the embedding model, then launch chat with
 Transformers:

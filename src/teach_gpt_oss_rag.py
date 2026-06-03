@@ -14,6 +14,7 @@ try:
 except ModuleNotFoundError:
     pass
 
+from rag_model_config import validate_embedding_model, validate_generator_model
 from runtime_env import env_int, env_path, env_str
 
 DEFAULT_MODEL = env_str("GENERATOR_MODEL", "openai/gpt-oss-20b")
@@ -229,6 +230,8 @@ def main() -> int:
         )
 
     embed_model = resolve_embed_model(index_dir, args.embed_model)
+    validate_embedding_model(embed_model)
+    validate_generator_model(args.model)
     print(f"Loading RAG index: {index_dir}")
     import faiss
     from sentence_transformers import SentenceTransformer
