@@ -19,9 +19,17 @@ GEN_DTYPE="${GENERATOR_DTYPE:-auto}"
 GEN_OFFLOAD_DIR="${GENERATOR_OFFLOAD_DIR:-${TMPDIR:-/tmp}/llama32-generator-offload}"
 
 case "${GENERATOR:l}" in
+  gpt-oss:20b|gpt-oss:20)
+    print -u2 "warning: GENERATOR_MODEL=$GENERATOR is an Ollama-style id; using openai/gpt-oss-20b."
+    GENERATOR="openai/gpt-oss-20b"
+    ;;
+  gpt-oss:120b|gpt-oss:120)
+    print -u2 "warning: GENERATOR_MODEL=$GENERATOR is an Ollama-style id; using openai/gpt-oss-120b."
+    GENERATOR="openai/gpt-oss-120b"
+    ;;
   gpt-oss:*)
-    print -u2 "error: GENERATOR_MODEL must be a Hugging Face model id."
-    print -u2 "Set GENERATOR_MODEL=openai/gpt-oss-20b and rerun."
+    print -u2 "error: GENERATOR_MODEL=$GENERATOR is not a Hugging Face model id."
+    print -u2 "Use openai/gpt-oss-20b or openai/gpt-oss-120b."
     exit 2
     ;;
 esac
@@ -43,6 +51,8 @@ case "${RERANK:l}" in
 esac
 
 export RAG_EMBED_DEVICE="$EMBED_DEVICE"
+export GENERATOR_MODEL="$GENERATOR"
+export BASE_MODEL="$GENERATOR"
 export GENERATOR_DEVICE_MAP="$GEN_DEVICE_MAP"
 export GENERATOR_GPU_MEMORY="$GEN_GPU_MEMORY"
 export GENERATOR_CPU_MEMORY="$GEN_CPU_MEMORY"
