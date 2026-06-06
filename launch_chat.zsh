@@ -28,7 +28,7 @@ if (( LOW_VRAM_NVIDIA )); then
   RETRIEVE_TOP_K="${RETRIEVE_K:-3}"
   NEW_TOKENS="${MAX_NEW_TOKENS:-160}"
   CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-4096}"
-  GEN_ATTN="${GENERATOR_ATTN_IMPLEMENTATION:-sdpa}"
+  GEN_ATTN="${GENERATOR_ATTN_IMPLEMENTATION:-eager}"
   if [[ "$RETRIEVE_TOP_K" == <-> && "$RETRIEVE_TOP_K" -gt 3 ]]; then
     RETRIEVE_TOP_K=3
   fi
@@ -65,6 +65,11 @@ case "${GENERATOR:l}" in
     exit 2
     ;;
 esac
+
+if [[ "${GENERATOR:l}" == *gpt-oss* && "${GEN_ATTN:l}" == "sdpa" ]]; then
+  print -u2 "warning: gpt-oss does not support attn_implementation=sdpa in Transformers yet; using eager."
+  GEN_ATTN="eager"
+fi
 
 case "${EMBED:l}" in
   *gpt-oss*)
