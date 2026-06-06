@@ -15,6 +15,7 @@ GENERATOR_DEVICE_MAP = env_str("GENERATOR_DEVICE_MAP")
 GENERATOR_DTYPE = env_str("GENERATOR_DTYPE", "auto")
 GENERATOR_GPU_MEMORY = env_str("GENERATOR_GPU_MEMORY")
 GENERATOR_OFFLOAD_DIR = env_str("GENERATOR_OFFLOAD_DIR")
+GENERATOR_ATTN_IMPLEMENTATION = env_str("GENERATOR_ATTN_IMPLEMENTATION")
 
 # transformers ≥ 4.51 renamed the from_pretrained dtype kwarg from
 # `torch_dtype` to `dtype`; older builds silently ignore `dtype`.
@@ -153,6 +154,8 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
         model_kwargs["max_memory"] = max_memory
     if GENERATOR_OFFLOAD_DIR:
         model_kwargs["offload_folder"] = GENERATOR_OFFLOAD_DIR
+    if GENERATOR_ATTN_IMPLEMENTATION:
+        model_kwargs["attn_implementation"] = GENERATOR_ATTN_IMPLEMENTATION
     model_kwargs.update(kwargs)
     print(f"Generator device_map: {model_kwargs.get('device_map', '<default>')}")
     print(f"Generator dtype: {model_kwargs.get(_DTYPE_KWARG)}")
@@ -160,6 +163,8 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
         print(f"Generator max_memory: {model_kwargs['max_memory']}")
     if "offload_folder" in model_kwargs:
         print(f"Generator offload_folder: {model_kwargs['offload_folder']}")
+    if "attn_implementation" in model_kwargs:
+        print(f"Generator attention: {model_kwargs['attn_implementation']}")
     return AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
 
 

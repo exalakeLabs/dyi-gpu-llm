@@ -17,6 +17,7 @@ EMBED_MODEL = env_str("EMBED_MODEL")
 EMBED_DEVICE = env_str("RAG_EMBED_DEVICE", "auto")
 GENERATOR_MODEL = env_str("GENERATOR_MODEL", BASE_MODEL)
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
+MAX_CONTEXT_CHARS = env_int("MAX_CONTEXT_CHARS", 0)
 RAG_DIR = env_path("RAG_DIR", "rag")
 RETRIEVE_K = env_int("RETRIEVE_K", 24)
 SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
@@ -46,12 +47,20 @@ def retrieve(query, embedder, index, rows, top_k=RETRIEVE_K):
     return hits
 
 
-def format_context(hits):
+def format_context(hits, max_chars: int = MAX_CONTEXT_CHARS):
     parts = []
+    remaining = max_chars
     for i, hit in enumerate(hits, start=1):
+        text = hit["text"]
+        if max_chars > 0:
+            if remaining <= 0:
+                break
+            if len(text) > remaining:
+                text = text[:remaining].rstrip() + "\n[truncated]"
+            remaining -= len(text)
         parts.append(
             f"[Context {i} | source={hit['source']} | chunk={hit['chunk_id']} | score={hit['score']:.4f}]\n"
-            f"{hit['text']}"
+            f"{text}"
         )
     return "\n\n".join(parts)
 
@@ -66,6 +75,7 @@ def main() -> int:
     parser.add_argument("--embed-device", default=EMBED_DEVICE)
     parser.add_argument("--top-k", type=int, default=RETRIEVE_K)
     parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
+    parser.add_argument("--max-context-chars", type=int, default=MAX_CONTEXT_CHARS)
     parser.add_argument("--system-prompt", default=SYSTEM_PROMPT)
     args = parser.parse_args()
 
@@ -94,11 +104,13 @@ def main() -> int:
             break
 
         hits = retrieve(query, embedder, index, rows, top_k=args.top_k)
-        context = format_context(hits)
+        context = format_context(hits, max_chars=args.max_context_chars)
 
         print("\n--- RETRIEVED CONTEXT ---\n")
         for hit in hits:
             print(f"{hit['source']} [chunk {hit['chunk_id']}] score={hit['score']:.4f}")
+        if args.max_context_chars > 0:
+            print(f"Context character budget: {args.max_context_chars}")
 
         user_prompt = (
             f"Question:\n{query}\n\n"
