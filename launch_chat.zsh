@@ -12,6 +12,7 @@ GENERATOR="${GENERATOR_MODEL:-openai/gpt-oss-20b}"
 EMBED="${EMBED_MODEL:-BAAI/bge-base-en-v1.5}"
 RERANK="${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}"
 LOW_VRAM_NVIDIA=0
+LOW_VRAM_NVIDIA_RUNTIME="${LOW_VRAM_NVIDIA_RUNTIME:-cpu}"
 
 if command -v nvidia-smi >/dev/null 2>&1; then
   NVIDIA_TOTAL_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -n 1 | tr -d '[:space:]' || true)"
@@ -21,10 +22,17 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 fi
 
 EMBED_DEVICE="${RAG_EMBED_DEVICE:-cpu}"
-GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
 if (( LOW_VRAM_NVIDIA )); then
-  GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-3GiB}"
-  GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-64GiB}"
+  if [[ "${LOW_VRAM_NVIDIA_RUNTIME:l}" == "cuda" ]]; then
+    GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
+    GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-3GiB}"
+  else
+    LOW_VRAM_NVIDIA_RUNTIME="cpu"
+    GEN_DEVICE_MAP="cpu"
+    GEN_GPU_MEMORY=""
+    CUDA_VISIBLE_DEVICES_VALUE=""
+  fi
+  GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-96GiB}"
   RETRIEVE_TOP_K="${RETRIEVE_K:-3}"
   NEW_TOKENS="${MAX_NEW_TOKENS:-160}"
   CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-4096}"
@@ -39,6 +47,7 @@ if (( LOW_VRAM_NVIDIA )); then
     CONTEXT_CHARS=4096
   fi
 else
+  GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
   GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-5GiB}"
   GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-48GiB}"
   RETRIEVE_TOP_K="${RETRIEVE_K:-24}"
@@ -98,18 +107,25 @@ export GENERATOR_OFFLOAD_DIR="$GEN_OFFLOAD_DIR"
 export GENERATOR_ATTN_IMPLEMENTATION="$GEN_ATTN"
 export PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-$PYTORCH_CUDA_ALLOC_CONF}"
+if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE+x}" ]]; then
+  export CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES_VALUE"
+fi
 mkdir -p "$GEN_OFFLOAD_DIR"
 
 print "Generator: $GENERATOR"
 if (( LOW_VRAM_NVIDIA )); then
   print "Low-VRAM NVIDIA profile: enabled (${NVIDIA_TOTAL_MIB} MiB detected)"
+  print "Low-VRAM NVIDIA runtime: $LOW_VRAM_NVIDIA_RUNTIME"
 fi
 print "Generator device_map: $GENERATOR_DEVICE_MAP"
-print "Generator GPU memory cap: $GENERATOR_GPU_MEMORY"
+print "Generator GPU memory cap: ${GENERATOR_GPU_MEMORY:-<none>}"
 print "Generator CPU memory cap: $GENERATOR_CPU_MEMORY"
 print "Generator dtype: $GENERATOR_DTYPE"
 print "Generator offload dir: $GENERATOR_OFFLOAD_DIR"
 print "Generator attention: ${GENERATOR_ATTN_IMPLEMENTATION:-<default>}"
+if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE+x}" ]]; then
+  print "CUDA visible devices: ${CUDA_VISIBLE_DEVICES:-<none>}"
+fi
 print "PyTorch CUDA alloc conf: $PYTORCH_CUDA_ALLOC_CONF"
 print "RAG embedder: $EMBED on $RAG_EMBED_DEVICE"
 print "Retrieve top-k: $RETRIEVE_TOP_K"
