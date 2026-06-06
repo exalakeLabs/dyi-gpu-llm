@@ -14,3 +14,4 @@ src/__pycache__/
 .claude/
 .log
 .env
+hf_token.txt

@@ -11,6 +11,8 @@ REQUIREMENTS_FILE="${REQUIREMENTS_FILE:-requirements.txt}"
 ENV_FILE="${ENV_FILE:-.env}"
 ENV_DEFAULT_FILE="${ENV_DEFAULT_FILE:-.env.default}"
 PROMPT_ENV="${PROMPT_ENV:-1}"
+PROMPT_HF_TOKEN="${PROMPT_HF_TOKEN:-1}"
+HF_TOKEN_FILE="${HF_TOKEN_FILE:-hf_token.txt}"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -37,9 +39,12 @@ Environment overrides:
   ENV_FILE           Environment file to update (default: .env)
   ENV_DEFAULT_FILE   Template copied to ENV_FILE when missing (default: .env.default)
   PROMPT_ENV         Set to 0 to skip prompts for literal .env defaults
+  PROMPT_HF_TOKEN    Set to 0 to skip Hugging Face token setup (default: 1)
+  HF_TOKEN_FILE      Optional file to read a Hugging Face token from (default: hf_token.txt)
 
 Options:
   --no-env-prompt    Skip prompts for literal .env defaults
+  --no-hf-token      Skip Hugging Face token setup
 EOF
   exit "$usage_status"
 }
@@ -54,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --cuda-version)   CUDA_VERSION="$2";  shift 2 ;;
     --rocm-version)   ROCM_VERSION="$2";  shift 2 ;;
     --no-env-prompt)  PROMPT_ENV=0;       shift ;;
+    --no-hf-token)    PROMPT_HF_TOKEN=0;  shift ;;
     -h|--help)        usage 0 ;;
     *) echo "error: unknown argument '$1'" >&2; usage 1 ;;
   esac
@@ -206,15 +212,60 @@ prompt_env_var() {
   set_env_var "$name" "$value"
 }
 
+configure_hf_token() {
+  if [[ "$PROMPT_HF_TOKEN" == "0" ]]; then
+    return
+  fi
+
+  local token="${HF_TOKEN:-}"
+
+  if [[ -z "$token" && -f "$HF_TOKEN_FILE" ]]; then
+    token="$(head -n 1 "$HF_TOKEN_FILE" | tr -d '[:space:]')"
+    if [[ -n "$token" ]]; then
+      export HF_TOKEN="$token"
+      set_env_var "HF_TOKEN" "$token"
+      printf 'Saved HF_TOKEN from %s to %s.\n' "$HF_TOKEN_FILE" "$ENV_FILE"
+      return
+    fi
+  fi
+
+  if [[ -n "$token" ]]; then
+    set_env_var "HF_TOKEN" "$token"
+    printf 'Saved existing HF_TOKEN to %s.\n' "$ENV_FILE"
+    return
+  fi
+
+  if [[ ! -t 0 ]]; then
+    printf '\033[1;33mSkipping Hugging Face token prompt because stdin is not interactive.\033[0m\n'
+    return
+  fi
+
+  printf '\n\033[1;34mHugging Face token\033[0m\n'
+  printf 'Paste a Hugging Face access token, or press Enter to skip: '
+  read -rs token
+  printf '\n'
+
+  if [[ -z "$token" ]]; then
+    printf 'Skipped HF_TOKEN setup.\n'
+    return
+  fi
+
+  export HF_TOKEN="$token"
+  set_env_var "HF_TOKEN" "$token"
+  printf 'Saved HF_TOKEN to %s.\n' "$ENV_FILE"
+}
+
 configure_runtime_env() {
   if [[ "$PROMPT_ENV" == "0" ]]; then
     load_env_file
+    configure_hf_token
     return
   fi
 
   if [[ ! -t 0 ]]; then
     printf '\033[1;33mSkipping environment prompts because stdin is not interactive.\033[0m\n'
     load_env_file
+    configure_hf_token
     return
   fi
 
@@ -224,6 +275,7 @@ configure_runtime_env() {
   prompt_defaults=("${(@f)$(literal_env_defaults)}")
 
   if (( ${#prompt_defaults[@]} == 0 )); then
+    configure_hf_token
     return
   fi
 
@@ -239,6 +291,7 @@ configure_runtime_env() {
   done
 
   load_env_file
+  configure_hf_token
 
   printf '\nSaved environment defaults to %s.\n\n' "$ENV_FILE"
 }
