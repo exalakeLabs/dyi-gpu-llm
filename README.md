@@ -156,14 +156,18 @@ embedder stays on CPU by default so the generator gets the VRAM:
 ```bash
 RAG_EMBED_DEVICE=cpu
 GENERATOR_DEVICE_MAP=auto
-GENERATOR_GPU_MEMORY=8GiB
+GENERATOR_GPU_MEMORY=6GiB
 GENERATOR_MXFP4_DEQUANTIZE=0
+MAX_CONTEXT_CHARS=2048
+MAX_NEW_TOKENS=96
 ```
 
-If CUDA still fails during MXFP4 conversion, lower the cap:
+On bf16-capable CUDA cards, the runtime uses bf16 automatically unless
+`GENERATOR_DTYPE` is set. If CUDA still reports `device not ready` during
+generation, reboot the host to reset the driver, then lower the cap further:
 
 ```bash
-GENERATOR_GPU_MEMORY=6GiB ./launch_chat.zsh
+GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh
 ```
 
 On 8 GB Radeon cards such as the RX 7600, Transformers may dequantize the

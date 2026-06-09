@@ -112,7 +112,7 @@ if (( LOW_VRAM_GPU )); then
       GEN_GPU_MEMORY="$GENERATOR_GPU_MEMORY"
     elif [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
       if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
-        GEN_GPU_MEMORY="8GiB"
+        GEN_GPU_MEMORY="6GiB"
       else
         GEN_GPU_MEMORY="14GiB"
       fi
@@ -144,17 +144,26 @@ if (( LOW_VRAM_GPU )); then
   fi
   GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-$DEFAULT_GEN_CPU_MEMORY}"
   RETRIEVE_TOP_K="${RETRIEVE_K:-3}"
-  NEW_TOKENS="${MAX_NEW_TOKENS:-160}"
-  CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-4096}"
+  if [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
+    NEW_TOKENS="${MAX_NEW_TOKENS:-96}"
+    CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-2048}"
+    NEW_TOKEN_LIMIT=96
+    CONTEXT_CHAR_LIMIT=2048
+  else
+    NEW_TOKENS="${MAX_NEW_TOKENS:-160}"
+    CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-4096}"
+    NEW_TOKEN_LIMIT=160
+    CONTEXT_CHAR_LIMIT=4096
+  fi
   GEN_ATTN="${GENERATOR_ATTN_IMPLEMENTATION:-eager}"
   if [[ "$RETRIEVE_TOP_K" == <-> && "$RETRIEVE_TOP_K" -gt 3 ]]; then
     RETRIEVE_TOP_K=3
   fi
-  if [[ "$NEW_TOKENS" == <-> && "$NEW_TOKENS" -gt 160 ]]; then
-    NEW_TOKENS=160
+  if [[ "$NEW_TOKENS" == <-> && "$NEW_TOKENS" -gt "$NEW_TOKEN_LIMIT" ]]; then
+    NEW_TOKENS="$NEW_TOKEN_LIMIT"
   fi
-  if [[ "$CONTEXT_CHARS" == <-> && "$CONTEXT_CHARS" -gt 4096 ]]; then
-    CONTEXT_CHARS=4096
+  if [[ "$CONTEXT_CHARS" == <-> && "$CONTEXT_CHARS" -gt "$CONTEXT_CHAR_LIMIT" ]]; then
+    CONTEXT_CHARS="$CONTEXT_CHAR_LIMIT"
   fi
 else
   GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
@@ -261,7 +270,8 @@ if [[ -n "$GPU_VISIBILITY_NOTE" ]]; then
       print "CUDA full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
     else
       print "CUDA CPU fallback: LOW_VRAM_CUDA_RUNTIME=cpu LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
-      print "CUDA lower VRAM cap: GENERATOR_GPU_MEMORY=6GiB ./launch_chat.zsh"
+      print "CUDA lower VRAM cap: GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh"
+      print "CUDA diagnostic mode: CUDA_LAUNCH_BLOCKING=1 GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh"
     fi
   fi
 fi

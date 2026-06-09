@@ -68,6 +68,12 @@ def _model_dtype() -> torch.dtype:
         return torch.float32
     if _rocm_supports_bf16():
         return torch.bfloat16
+    if torch.cuda.is_available():
+        try:
+            if torch.cuda.is_bf16_supported():
+                return torch.bfloat16
+        except Exception:
+            pass
     return torch.float16
 
 
@@ -255,8 +261,23 @@ def generate_text(tokenizer, model, messages, **generate_kwargs) -> str:
     }
     defaults.update(generate_kwargs)
 
-    with torch.inference_mode():
-        outputs = model.generate(**inputs, **defaults)
+    try:
+        with torch.inference_mode():
+            outputs = model.generate(**inputs, **defaults)
+    except RuntimeError as exc:
+        message = str(exc)
+        if "CUDA driver error: device not ready" in message:
+            raise RuntimeError(
+                "\n".join(
+                    [
+                        "CUDA reported that the GPU is not ready during generation.",
+                        "This usually means the CUDA driver/context reset or became wedged after a GPU kernel failure.",
+                        "Reboot the host, then retry with a lower cap such as GENERATOR_GPU_MEMORY=4GiB.",
+                        "For diagnostics, run: journalctl -k -b --no-pager | grep -Ei 'NVRM|Xid|GPU|reset|nvidia'",
+                    ]
+                )
+            ) from exc
+        raise
 
     new_tokens = outputs[0][input_tokens:]
     return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
