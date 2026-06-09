@@ -177,8 +177,16 @@ while leaving the GPU visible for the RAG embedder:
 ```bash
 RAG_EMBED_DEVICE=auto
 GENERATOR_DEVICE_MAP=cpu
-GENERATOR_CPU_MEMORY=96GiB
 GENERATOR_MXFP4_DEQUANTIZE=1
+```
+
+By default, `GENERATOR_CPU_MEMORY` is computed from host RAM and reserves 8 GiB
+for the OS and other processes. On a 32 GB server, Linux usually reports about
+31 GiB usable RAM, so the cap is about `23GiB`. Override it only when you know
+the machine has more headroom:
+
+```bash
+GENERATOR_CPU_MEMORY=24GiB ./launch_chat.zsh
 ```
 
 For a hybrid ROCm run, opt in explicitly and leave conversion headroom:

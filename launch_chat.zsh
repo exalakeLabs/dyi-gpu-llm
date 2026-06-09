@@ -19,6 +19,39 @@ LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-}"
 GPU_VISIBILITY_NOTE=""
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
 GEN_USE_KERNELS="${GENERATOR_USE_KERNELS:-0}"
+HOST_RAM_GIB=""
+DEFAULT_GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY_FALLBACK:-24GiB}"
+GEN_CPU_MEMORY_OVERRIDDEN=0
+if [[ -n "${GENERATOR_CPU_MEMORY:-}" ]]; then
+  GEN_CPU_MEMORY_OVERRIDDEN=1
+fi
+
+detect_cpu_memory_cap() {
+  local total_kib total_gib reserve_gib cap_gib
+
+  if [[ -r /proc/meminfo ]]; then
+    total_kib="$(awk '/^MemTotal:/ {print $2; exit}' /proc/meminfo 2>/dev/null || true)"
+  fi
+
+  if [[ "$total_kib" == <-> ]]; then
+    total_gib=$(( total_kib / 1024 / 1024 ))
+    HOST_RAM_GIB="$total_gib"
+    reserve_gib="${GENERATOR_CPU_RESERVE_GIB:-8}"
+    if [[ ! "$reserve_gib" == <-> ]]; then
+      reserve_gib=8
+    fi
+    cap_gib=$(( total_gib - reserve_gib ))
+    if (( cap_gib < 8 )); then
+      cap_gib=8
+    fi
+    DEFAULT_GEN_CPU_MEMORY="${cap_gib}GiB"
+    return
+  fi
+
+  DEFAULT_GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY_FALLBACK:-24GiB}"
+}
+
+detect_cpu_memory_cap
 
 if command -v nvidia-smi >/dev/null 2>&1; then
   NVIDIA_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
@@ -129,7 +162,7 @@ if (( LOW_VRAM_GPU )); then
       fi
     fi
   fi
-  GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-96GiB}"
+  GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-$DEFAULT_GEN_CPU_MEMORY}"
   RETRIEVE_TOP_K="${RETRIEVE_K:-3}"
   NEW_TOKENS="${MAX_NEW_TOKENS:-160}"
   CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-4096}"
@@ -146,7 +179,7 @@ if (( LOW_VRAM_GPU )); then
 else
   GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
   GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-5GiB}"
-  GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-48GiB}"
+  GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-$DEFAULT_GEN_CPU_MEMORY}"
   RETRIEVE_TOP_K="${RETRIEVE_K:-24}"
   NEW_TOKENS="${MAX_NEW_TOKENS:-500}"
   CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-0}"
@@ -225,6 +258,9 @@ fi
 print "Generator device_map: $GENERATOR_DEVICE_MAP"
 print "Generator GPU memory cap: ${GENERATOR_GPU_MEMORY:-<none>}"
 print "Generator CPU memory cap: $GENERATOR_CPU_MEMORY"
+if [[ -n "$HOST_RAM_GIB" && "$GEN_CPU_MEMORY_OVERRIDDEN" == "0" ]]; then
+  print "Host RAM detected: ${HOST_RAM_GIB}GiB; CPU memory reserve: ${GENERATOR_CPU_RESERVE_GIB:-8}GiB"
+fi
 print "Generator dtype: $GENERATOR_DTYPE"
 print "Generator MXFP4 dequantize: $GENERATOR_MXFP4_DEQUANTIZE"
 print "Generator kernels: $GENERATOR_USE_KERNELS"
