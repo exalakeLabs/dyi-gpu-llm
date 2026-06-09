@@ -18,6 +18,7 @@ LOW_VRAM_TOTAL_MIB=""
 LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-}"
 GPU_VISIBILITY_NOTE=""
 GPU_CAP_WARNING=""
+GENERATOR_RUNTIME_WARNING=""
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
 HOST_RAM_GIB=""
 DEFAULT_GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY_FALLBACK:-24GiB}"
@@ -208,6 +209,14 @@ if [[ "${GENERATOR:l}" == *gpt-oss* && "${GEN_ATTN:l}" == "sdpa" ]]; then
   GEN_ATTN="eager"
 fi
 
+if (( LOW_VRAM_GPU )) && [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
+  if [[ "${LOW_VRAM_RUNTIME:l}" == "cuda" || "${LOW_VRAM_RUNTIME:l}" == "gpu" ]]; then
+    if [[ "${GENERATOR:l}" == *gpt-oss* && "${GEN_DEVICE_MAP:l}" == "auto" && "$GEN_MXFP4_DEQUANTIZE" == "0" ]]; then
+      GENERATOR_RUNTIME_WARNING="openai/gpt-oss-20b with Transformers MXFP4 is a ~16GB-memory path; a 12GB RTX/NVIDIA card usually needs CPU/disk offload, which this MXFP4 backend may reject."
+    fi
+  fi
+fi
+
 case "${EMBED:l}" in
   *gpt-oss*)
     print -u2 "error: EMBED_MODEL is set to '$EMBED', but gpt-oss is a generator model."
@@ -261,6 +270,9 @@ if [[ -n "$HOST_RAM_GIB" && "$GEN_CPU_MEMORY_OVERRIDDEN" == "0" ]]; then
 fi
 print "Generator dtype: $GENERATOR_DTYPE"
 print "Generator MXFP4 dequantize: $GENERATOR_MXFP4_DEQUANTIZE"
+if [[ -n "$GENERATOR_RUNTIME_WARNING" ]]; then
+  print "warning: $GENERATOR_RUNTIME_WARNING"
+fi
 print "Generator offload dir: $GENERATOR_OFFLOAD_DIR"
 print "Generator attention: ${GENERATOR_ATTN_IMPLEMENTATION:-<default>}"
 if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE+x}" ]]; then

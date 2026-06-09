@@ -26,6 +26,12 @@ GENERATOR_USE_KERNELS = env_str("GENERATOR_USE_KERNELS", "0").strip().lower() in
     "yes",
     "on",
 }
+GENERATOR_ALLOW_META_OFFLOAD = env_str("GENERATOR_ALLOW_META_OFFLOAD", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 GENERATOR_OFFLOAD_DIR = env_str("GENERATOR_OFFLOAD_DIR")
 GENERATOR_ATTN_IMPLEMENTATION = env_str("GENERATOR_ATTN_IMPLEMENTATION")
 
@@ -124,6 +130,43 @@ def _cuda_not_ready_error(phase: str) -> RuntimeError:
     )
 
 
+def _is_gpt_oss(base_model: str | None) -> bool:
+    return "gpt-oss" in (base_model or "").lower()
+
+
+def _uses_native_mxfp4(base_model: str | None) -> bool:
+    return _is_gpt_oss(base_model) and not GENERATOR_MXFP4_DEQUANTIZE
+
+
+def _meta_parameter_names(model, limit: int = 8) -> list[str]:
+    names = []
+    for name, param in model.named_parameters():
+        if param.device.type == "meta":
+            names.append(name)
+            if len(names) >= limit:
+                break
+    return names
+
+
+def _meta_offload_error(phase: str, names: list[str] | None = None) -> RuntimeError:
+    examples = ", ".join(names or [])
+    lines = [
+        f"gpt-oss native MXFP4 has meta/offloaded tensors during {phase}.",
+        "This Transformers MXFP4 path expects those weights to be live tensors during generation; with disk/meta offload it can crash with 'Tensor on device meta is not on the expected device cuda:0'.",
+        "For openai/gpt-oss-20b, use a GPU with roughly 16GB+ VRAM for the Transformers MXFP4 path, or use a runtime that supports CPU/GPU split for gpt-oss GGUF/Ollama-style execution.",
+        "On this 12GB RTX/NVIDIA setup, lowering GENERATOR_GPU_MEMORY makes loading safer but increases offload and does not make native MXFP4 offload reliable.",
+    ]
+    if examples:
+        lines.append(f"Example meta tensors: {examples}")
+    lines.extend(
+        [
+            f"Current caps: GENERATOR_GPU_MEMORY={GENERATOR_GPU_MEMORY or '<none>'}, GENERATOR_CPU_MEMORY={GENERATOR_CPU_MEMORY or '<none>'}.",
+            "To bypass this guard for debugging only, set GENERATOR_ALLOW_META_OFFLOAD=1.",
+        ]
+    )
+    return RuntimeError("\n".join(lines))
+
+
 def patch_rocm_isin() -> None:
     """
     Work around a ROCm bug where torch.isin raises on GPU tensors.
@@ -199,8 +242,8 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
         model_kwargs["offload_folder"] = GENERATOR_OFFLOAD_DIR
     if GENERATOR_ATTN_IMPLEMENTATION:
         model_kwargs["attn_implementation"] = GENERATOR_ATTN_IMPLEMENTATION
-    should_dequantize_mxfp4 = GENERATOR_MXFP4_DEQUANTIZE and "gpt-oss" in (base_model or "").lower()
-    should_use_kernels = GENERATOR_USE_KERNELS and "gpt-oss" in (base_model or "").lower()
+    should_dequantize_mxfp4 = GENERATOR_MXFP4_DEQUANTIZE and _is_gpt_oss(base_model)
+    should_use_kernels = GENERATOR_USE_KERNELS and _is_gpt_oss(base_model)
     if should_dequantize_mxfp4 and "quantization_config" not in kwargs:
         try:
             from transformers.utils.quantization_config import Mxfp4Config
@@ -228,12 +271,12 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
     if "attn_implementation" in model_kwargs:
         print(f"Generator attention: {model_kwargs['attn_implementation']}")
     try:
-        return AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
+        model = AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
     except RuntimeError as exc:
         message = _exception_chain_text(exc)
         if "CUDA driver error: device not ready" in message:
             raise _cuda_not_ready_error("model loading / MXFP4 conversion") from exc
-        if "automatic conversion of the weights" in message and "gpt-oss" in (base_model or "").lower():
+        if "automatic conversion of the weights" in message and _is_gpt_oss(base_model):
             raise RuntimeError(
                 "\n".join(
                     [
@@ -244,6 +287,13 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
                 )
             ) from exc
         raise
+
+    if _uses_native_mxfp4(base_model) and torch.cuda.is_available() and not GENERATOR_ALLOW_META_OFFLOAD:
+        meta_names = _meta_parameter_names(model)
+        if meta_names:
+            raise _meta_offload_error("model loading", meta_names)
+
+    return model
 
 
 def load_generation_model(
@@ -309,6 +359,8 @@ def generate_text(tokenizer, model, messages, **generate_kwargs) -> str:
         message = _exception_chain_text(exc)
         if "CUDA driver error: device not ready" in message:
             raise _cuda_not_ready_error("generation") from exc
+        if "Tensor on device meta" in message or "device meta is not on the expected device" in message:
+            raise _meta_offload_error("generation") from exc
         raise
 
     new_tokens = outputs[0][input_tokens:]

@@ -162,14 +162,30 @@ MAX_CONTEXT_CHARS=2048
 MAX_NEW_TOKENS=96
 ```
 
-On bf16-capable CUDA cards, the runtime uses bf16 automatically unless
-`GENERATOR_DTYPE` is set. Avoid large caps such as `8GiB` on a 12 GB card:
-MXFP4 conversion and attention kernels need temporary VRAM above the placed
-model weights. If CUDA reports `device not ready` during loading or generation,
-reboot the host to reset the driver, then retry the conservative cap:
+This keeps the GPU visible, but it does not guarantee that
+`openai/gpt-oss-20b` can run through Transformers on a 12 GB card. The model's
+native MXFP4 path is a roughly 16 GB memory target. If `device_map=auto` leaves
+some tensors on `meta` / disk offload, this Transformers MXFP4 path can fail at
+generation time with `Tensor on device meta is not on the expected device
+cuda:0`. The chat runtime now detects that state immediately and exits with a
+specific error instead of waiting for the first prompt to crash.
+
+Avoid large caps such as `8GiB` on a 12 GB card: MXFP4 conversion and attention
+kernels need temporary VRAM above the placed model weights. If CUDA reports
+`device not ready` during loading or generation, reboot the host to reset the
+driver, then retry the conservative cap:
 
 ```bash
 GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh
+```
+
+If the runtime reports meta/offloaded tensors, lowering the GPU cap further will
+not fix that path; it increases offload. Use a smaller Hugging Face generator, a
+GPU with more VRAM, or a runtime that supports gpt-oss CPU/GPU split execution.
+For debugging only, bypass the guard with:
+
+```bash
+GENERATOR_ALLOW_META_OFFLOAD=1 ./launch_chat.zsh
 ```
 
 On 8 GB Radeon cards such as the RX 7600, Transformers may dequantize the
