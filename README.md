@@ -149,11 +149,29 @@ Transformers:
 ./launch_chat.zsh
 ```
 
+On low-VRAM NVIDIA cards such as a 12 GB RTX 5070, the launcher defaults to
+CUDA-native MXFP4 instead of CPU dequantization. CPU dequantization can consume
+enough system RAM for the OS to kill the process, while native MXFP4 keeps the
+generator compact:
+
+```bash
+LOW_VRAM_CUDA_RUNTIME=cuda
+RAG_EMBED_DEVICE=cpu
+GENERATOR_DEVICE_MAP=auto
+GENERATOR_GPU_MEMORY=10GiB
+GENERATOR_MXFP4_DEQUANTIZE=0
+```
+
+If CUDA still runs out of VRAM, lower the cap:
+
+```bash
+GENERATOR_GPU_MEMORY=8GiB ./launch_chat.zsh
+```
+
 On 8 GB Radeon cards such as the RX 7600, Transformers may dequantize the
 gpt-oss MXFP4 checkpoint instead of running it in-place as 4-bit weights. The
-launcher detects low-VRAM CUDA/ROCm devices and defaults the generator to CPU
-with explicit MXFP4 dequantization, while leaving the GPU visible for the RAG
-embedder:
+launcher defaults ROCm low-VRAM cards to CPU with explicit MXFP4 dequantization,
+while leaving the GPU visible for the RAG embedder:
 
 ```bash
 RAG_EMBED_DEVICE=auto

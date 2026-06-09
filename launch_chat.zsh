@@ -24,7 +24,7 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     LOW_VRAM_GPU=1
     LOW_VRAM_KIND="NVIDIA"
     LOW_VRAM_TOTAL_MIB="$NVIDIA_TOTAL_MIB"
-    LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-${LOW_VRAM_NVIDIA_RUNTIME:-cpu}}"
+    LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-${LOW_VRAM_NVIDIA_RUNTIME:-${LOW_VRAM_CUDA_RUNTIME:-cuda}}}"
   fi
 fi
 
@@ -50,7 +50,7 @@ PY
         if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
           LOW_VRAM_RUNTIME="${LOW_VRAM_ROCM_RUNTIME:-cpu}"
         else
-          LOW_VRAM_RUNTIME="${LOW_VRAM_CUDA_RUNTIME:-cpu}"
+          LOW_VRAM_RUNTIME="${LOW_VRAM_CUDA_RUNTIME:-cuda}"
         fi
       fi
     fi
@@ -61,7 +61,23 @@ EMBED_DEVICE="${RAG_EMBED_DEVICE:-cpu}"
 if (( LOW_VRAM_GPU )); then
   if [[ "${LOW_VRAM_RUNTIME:l}" == "cuda" || "${LOW_VRAM_RUNTIME:l}" == "rocm" || "${LOW_VRAM_RUNTIME:l}" == "gpu" ]]; then
     GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
-    GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-3GiB}"
+    if [[ -n "${GENERATOR_GPU_MEMORY:-}" ]]; then
+      GEN_GPU_MEMORY="$GENERATOR_GPU_MEMORY"
+    elif [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
+      if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
+        GEN_GPU_MEMORY="10GiB"
+      else
+        GEN_GPU_MEMORY="14GiB"
+      fi
+    else
+      GEN_GPU_MEMORY="3GiB"
+    fi
+    GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
+    if [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
+      GPU_VISIBILITY_NOTE="generator uses CUDA native MXFP4; RAG embedder defaults to CPU to preserve VRAM"
+    else
+      GPU_VISIBILITY_NOTE="generator is opted into low-VRAM GPU mode; leave conversion headroom"
+    fi
   else
     LOW_VRAM_RUNTIME="cpu"
     GEN_DEVICE_MAP="cpu"
@@ -177,11 +193,20 @@ fi
 if [[ -n "$GPU_VISIBILITY_NOTE" ]]; then
   print "GPU visibility note: $GPU_VISIBILITY_NOTE"
   if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
-    print "ROCm generator opt-in: LOW_VRAM_ROCM_RUNTIME=rocm RAG_EMBED_DEVICE=rocm ./launch_chat.zsh"
-    print "ROCm full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
+    if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
+      print "ROCm generator opt-in: LOW_VRAM_ROCM_RUNTIME=rocm RAG_EMBED_DEVICE=rocm ./launch_chat.zsh"
+      print "ROCm full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
+    else
+      print "ROCm CPU fallback: LOW_VRAM_ROCM_RUNTIME=cpu ./launch_chat.zsh"
+    fi
   else
-    print "CUDA generator opt-in: LOW_VRAM_CUDA_RUNTIME=cuda RAG_EMBED_DEVICE=cuda ./launch_chat.zsh"
-    print "CUDA full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
+    if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
+      print "CUDA generator opt-in: LOW_VRAM_CUDA_RUNTIME=cuda ./launch_chat.zsh"
+      print "CUDA full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
+    else
+      print "CUDA CPU fallback: LOW_VRAM_CUDA_RUNTIME=cpu LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
+      print "CUDA lower VRAM cap: GENERATOR_GPU_MEMORY=8GiB ./launch_chat.zsh"
+    fi
   fi
 fi
 print "PyTorch CUDA alloc conf: $PYTORCH_CUDA_ALLOC_CONF"
@@ -189,6 +214,11 @@ print "RAG embedder: $EMBED on $RAG_EMBED_DEVICE"
 print "Retrieve top-k: $RETRIEVE_TOP_K"
 print "Context chars: $CONTEXT_CHARS"
 print "Max new tokens: $NEW_TOKENS"
+
+if [[ "${LAUNCH_CHAT_DRY_RUN:-0}" == "1" ]]; then
+  print "Dry run: not starting chat_rag.py"
+  exit 0
+fi
 
 exec "${PYTHON:-python3}" ./src/chat_rag.py \
   --rag-dir "${RAG_DIR:-rag}" \
