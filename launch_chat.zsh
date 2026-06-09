@@ -18,7 +18,6 @@ LOW_VRAM_TOTAL_MIB=""
 LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-}"
 GPU_VISIBILITY_NOTE=""
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
-GEN_USE_KERNELS="${GENERATOR_USE_KERNELS:-0}"
 HOST_RAM_GIB=""
 DEFAULT_GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY_FALLBACK:-24GiB}"
 GEN_CPU_MEMORY_OVERRIDDEN=0
@@ -66,8 +65,6 @@ if command -v nvidia-smi >/dev/null 2>&1; then
         LOW_VRAM_RUNTIME="$LOW_VRAM_NVIDIA_RUNTIME"
       elif [[ -n "${LOW_VRAM_CUDA_RUNTIME:-}" ]]; then
         LOW_VRAM_RUNTIME="$LOW_VRAM_CUDA_RUNTIME"
-      elif [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
-        LOW_VRAM_RUNTIME="cpu-kernels"
       else
         LOW_VRAM_RUNTIME="cuda"
       fi
@@ -100,11 +97,7 @@ PY
         if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
           LOW_VRAM_RUNTIME="${LOW_VRAM_ROCM_RUNTIME:-cpu}"
         else
-          if [[ "$TORCH_GPU_TOTAL_MIB" == <-> && "$TORCH_GPU_TOTAL_MIB" -le 12288 ]]; then
-            LOW_VRAM_RUNTIME="${LOW_VRAM_CUDA_RUNTIME:-cpu-kernels}"
-          else
-            LOW_VRAM_RUNTIME="${LOW_VRAM_CUDA_RUNTIME:-cuda}"
-          fi
+          LOW_VRAM_RUNTIME="${LOW_VRAM_CUDA_RUNTIME:-cuda}"
         fi
       fi
     fi
@@ -119,7 +112,7 @@ if (( LOW_VRAM_GPU )); then
       GEN_GPU_MEMORY="$GENERATOR_GPU_MEMORY"
     elif [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
       if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
-        GEN_GPU_MEMORY="10GiB"
+        GEN_GPU_MEMORY="8GiB"
       else
         GEN_GPU_MEMORY="14GiB"
       fi
@@ -128,30 +121,17 @@ if (( LOW_VRAM_GPU )); then
     fi
     GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
     if [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
-      GPU_VISIBILITY_NOTE="generator uses CUDA native MXFP4; RAG embedder defaults to CPU to preserve VRAM"
+      GPU_VISIBILITY_NOTE="CUDA stays visible for RTX/NVIDIA; RAG embedder defaults to CPU to preserve VRAM"
     else
       GPU_VISIBILITY_NOTE="generator is opted into low-VRAM GPU mode; leave conversion headroom"
     fi
   else
     CPU_RUNTIME="${LOW_VRAM_RUNTIME:l}"
-    if [[ "$CPU_RUNTIME" != "cpu-kernels" ]]; then
-      LOW_VRAM_RUNTIME="cpu"
-      CPU_RUNTIME="cpu"
-    fi
+    LOW_VRAM_RUNTIME="cpu"
+    CPU_RUNTIME="cpu"
     GEN_DEVICE_MAP="cpu"
     GEN_GPU_MEMORY=""
-    if [[ "$CPU_RUNTIME" == "cpu-kernels" ]]; then
-      GEN_USE_KERNELS="${GENERATOR_USE_KERNELS:-1}"
-      GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
-      CUDA_VISIBLE_DEVICES_VALUE=""
-      if [[ "${LOW_VRAM_NAME:l}" == *"rtx 50"* || "${LOW_VRAM_NAME:l}" == *"rtx 5070"* ]]; then
-        GPU_VISIBILITY_NOTE="RTX 50-series CUDA MXFP4 conversion failed on this stack; using CPU MXFP4 kernels"
-      else
-        GPU_VISIBILITY_NOTE="hidden from Python so gpt-oss can use CPU MXFP4 kernels instead of CUDA conversion"
-      fi
-    else
-      GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-1}"
-    fi
+    GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-1}"
     if [[ -z "${CUDA_VISIBLE_DEVICES_VALUE+x}" && "${LOW_VRAM_HIDE_GPU:-0}" == "1" ]]; then
       CUDA_VISIBLE_DEVICES_VALUE=""
       GPU_VISIBILITY_NOTE="hidden from Python because LOW_VRAM_HIDE_GPU=1"
@@ -186,7 +166,6 @@ else
   GEN_ATTN="${GENERATOR_ATTN_IMPLEMENTATION:-}"
 fi
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-$GEN_MXFP4_DEQUANTIZE}"
-GEN_USE_KERNELS="${GENERATOR_USE_KERNELS:-$GEN_USE_KERNELS}"
 GEN_DTYPE="${GENERATOR_DTYPE:-auto}"
 GEN_OFFLOAD_DIR="${GENERATOR_OFFLOAD_DIR:-${TMPDIR:-/tmp}/llama32-generator-offload}"
 CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-${PYTORCH_ALLOC_CONF:-expandable_segments:True,max_split_size_mb:128}}"
@@ -236,7 +215,6 @@ export GENERATOR_GPU_MEMORY="$GEN_GPU_MEMORY"
 export GENERATOR_CPU_MEMORY="$GEN_CPU_MEMORY"
 export GENERATOR_DTYPE="$GEN_DTYPE"
 export GENERATOR_MXFP4_DEQUANTIZE="$GEN_MXFP4_DEQUANTIZE"
-export GENERATOR_USE_KERNELS="$GEN_USE_KERNELS"
 export GENERATOR_OFFLOAD_DIR="$GEN_OFFLOAD_DIR"
 export GENERATOR_ATTN_IMPLEMENTATION="$GEN_ATTN"
 export PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"
@@ -263,7 +241,6 @@ if [[ -n "$HOST_RAM_GIB" && "$GEN_CPU_MEMORY_OVERRIDDEN" == "0" ]]; then
 fi
 print "Generator dtype: $GENERATOR_DTYPE"
 print "Generator MXFP4 dequantize: $GENERATOR_MXFP4_DEQUANTIZE"
-print "Generator kernels: $GENERATOR_USE_KERNELS"
 print "Generator offload dir: $GENERATOR_OFFLOAD_DIR"
 print "Generator attention: ${GENERATOR_ATTN_IMPLEMENTATION:-<default>}"
 if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE+x}" ]]; then
@@ -279,15 +256,12 @@ if [[ -n "$GPU_VISIBILITY_NOTE" ]]; then
       print "ROCm CPU fallback: LOW_VRAM_ROCM_RUNTIME=cpu ./launch_chat.zsh"
     fi
   else
-    if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu-kernels" ]]; then
-      print "CUDA native opt-in: LOW_VRAM_CUDA_RUNTIME=cuda GENERATOR_GPU_MEMORY=8GiB ./launch_chat.zsh"
-      print "CUDA bf16 CPU fallback: LOW_VRAM_CUDA_RUNTIME=cpu ./launch_chat.zsh"
-    elif [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
+    if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
       print "CUDA generator opt-in: LOW_VRAM_CUDA_RUNTIME=cuda ./launch_chat.zsh"
       print "CUDA full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
     else
       print "CUDA CPU fallback: LOW_VRAM_CUDA_RUNTIME=cpu LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
-      print "CUDA lower VRAM cap: GENERATOR_GPU_MEMORY=8GiB ./launch_chat.zsh"
+      print "CUDA lower VRAM cap: GENERATOR_GPU_MEMORY=6GiB ./launch_chat.zsh"
     fi
   fi
 fi

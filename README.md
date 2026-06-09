@@ -149,24 +149,21 @@ Transformers:
 ./launch_chat.zsh
 ```
 
-On low-VRAM NVIDIA cards such as a 12 GB RTX 5070, CUDA-native MXFP4 conversion
-can fail late in the load with driver/allocation errors. The launcher therefore
-defaults these cards to CPU MXFP4 kernels with the GPU hidden from the generator.
-This avoids the high-RAM bf16 CPU dequantization path and avoids the unstable
-CUDA conversion path:
+On low-VRAM NVIDIA cards such as a 12 GB RTX 5070, the launcher keeps CUDA
+visible and uses native MXFP4 with a conservative GPU memory cap. The BGE
+embedder stays on CPU by default so the generator gets the VRAM:
 
 ```bash
-LOW_VRAM_CUDA_RUNTIME=cpu-kernels
 RAG_EMBED_DEVICE=cpu
-GENERATOR_DEVICE_MAP=cpu
+GENERATOR_DEVICE_MAP=auto
+GENERATOR_GPU_MEMORY=8GiB
 GENERATOR_MXFP4_DEQUANTIZE=0
-GENERATOR_USE_KERNELS=1
 ```
 
-To try CUDA-native MXFP4 anyway, opt in and leave conversion headroom:
+If CUDA still fails during MXFP4 conversion, lower the cap:
 
 ```bash
-LOW_VRAM_CUDA_RUNTIME=cuda GENERATOR_GPU_MEMORY=8GiB ./launch_chat.zsh
+GENERATOR_GPU_MEMORY=6GiB ./launch_chat.zsh
 ```
 
 On 8 GB Radeon cards such as the RX 7600, Transformers may dequantize the
