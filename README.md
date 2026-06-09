@@ -151,18 +151,36 @@ Transformers:
 
 On 8 GB Radeon cards such as the RX 7600, Transformers may dequantize the
 gpt-oss MXFP4 checkpoint instead of running it in-place as 4-bit weights. The
-launcher therefore defaults to a hybrid/offloaded setup:
+launcher detects low-VRAM CUDA/ROCm devices and defaults the generator to CPU
+with explicit MXFP4 dequantization, while leaving the GPU visible for the RAG
+embedder:
 
 ```bash
-RAG_EMBED_DEVICE=cpu
-GENERATOR_DEVICE_MAP=auto
-GENERATOR_GPU_MEMORY=5GiB
-GENERATOR_CPU_MEMORY=48GiB
+RAG_EMBED_DEVICE=auto
+GENERATOR_DEVICE_MAP=cpu
+GENERATOR_CPU_MEMORY=96GiB
+GENERATOR_MXFP4_DEQUANTIZE=1
+```
+
+For a hybrid ROCm run, opt in explicitly and leave conversion headroom:
+
+```bash
+LOW_VRAM_ROCM_RUNTIME=rocm
+RAG_EMBED_DEVICE=rocm
+GENERATOR_GPU_MEMORY=3GiB
+./launch_chat.zsh
+```
+
+If the explicit dequantized CPU path still touches the GPU on your stack, fully
+hide the GPU from the Python process:
+
+```bash
+LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh
 ```
 
 Increase `GENERATOR_GPU_MEMORY` only if there is free VRAM after the model
-loads. Lower it to `4GiB` if ROCm still reports out-of-memory. This can run, but
-it will be much slower than native MXFP4 execution on supported hardware.
+loads. This can run, but it will be much slower than native MXFP4 execution on
+supported hardware.
 
 ## Practical tuning tips
 

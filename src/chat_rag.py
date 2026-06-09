@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 import argparse
 import json
+import os
 from pathlib import Path
 
 import faiss
 import numpy as np
+import torch
 from sentence_transformers import SentenceTransformer
 
 from model_runtime import generate_text, load_generation_model
@@ -23,12 +25,276 @@ RETRIEVE_K = env_int("RETRIEVE_K", 24)
 SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
 
 
+def bytes_to_gib(value: int) -> str:
+    return f"{value / (1024**3):.2f} GiB"
+
+
+def normalize_device_key(device) -> str:
+    if isinstance(device, int):
+        return f"cuda:{device}"
+    if isinstance(device, torch.device):
+        if device.type == "cuda":
+            return f"cuda:{0 if device.index is None else device.index}"
+        return device.type
+
+    value = str(device).strip().lower()
+    if value == "cuda":
+        return "cuda:0"
+    if value.startswith("cuda:"):
+        return value
+    if value in {"cpu", "disk", "meta", "mps", "xpu"}:
+        return value
+    if value.startswith("xpu:"):
+        return value
+    return value or "unknown"
+
+
+def device_label(device_key: str) -> str:
+    if device_key.startswith("cuda"):
+        index = 0
+        if ":" in device_key:
+            try:
+                index = int(device_key.split(":", 1)[1])
+            except ValueError:
+                index = 0
+        backend = "ROCm/HIP" if torch.version.hip is not None else "CUDA"
+        if torch.cuda.is_available() and index < torch.cuda.device_count():
+            name = torch.cuda.get_device_name(index)
+            return f"{device_key} ({backend} GPU: {name})"
+        return f"{device_key} ({backend} GPU)"
+    if device_key == "disk":
+        return "disk offload"
+    if device_key == "meta":
+        return "meta/offloaded"
+    return device_key
+
+
+def is_gpu_device(device_key: str) -> bool:
+    return device_key.startswith("cuda") or device_key.startswith("xpu") or device_key == "mps"
+
+
+def device_index(device_key: str) -> int:
+    if ":" not in device_key:
+        return 0
+    try:
+        return int(device_key.split(":", 1)[1])
+    except ValueError:
+        return 0
+
+
+def mps_available() -> bool:
+    return getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available()
+
+
+def resolve_embed_device(device: str) -> str:
+    requested = (device or "auto").strip().lower()
+    if requested == "auto":
+        if torch.cuda.is_available():
+            return "cuda"
+        if mps_available():
+            return "mps"
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            return "xpu"
+        return "cpu"
+
+    if requested == "cpu":
+        return "cpu"
+
+    if requested.startswith(("rocm", "hip", "cuda")):
+        if not torch.cuda.is_available():
+            raise SystemExit(
+                f"Embedding device {requested!r} was requested, but no CUDA/ROCm GPU is visible.\n"
+                f"torch={torch.__version__}, torch.version.cuda={torch.version.cuda}, torch.version.hip={torch.version.hip}\n"
+                "If launch_chat.zsh printed 'CUDA visible devices: <none>', the GPU was hidden from Python. "
+                "Unset LOW_VRAM_HIDE_GPU or use LOW_VRAM_ROCM_RUNTIME=rocm RAG_EMBED_DEVICE=rocm ./launch_chat.zsh."
+            )
+        if requested.startswith(("rocm", "hip")) and torch.version.hip is None:
+            raise SystemExit(
+                f"Embedding device {requested!r} was requested, but this PyTorch build is not ROCm/HIP."
+            )
+        torch_device = requested.replace("rocm", "cuda", 1).replace("hip", "cuda", 1)
+        index = device_index(torch_device)
+        if index >= torch.cuda.device_count():
+            raise SystemExit(
+                f"Embedding device {requested!r} was requested, but only "
+                f"{torch.cuda.device_count()} CUDA/ROCm device(s) are visible."
+            )
+        return torch_device
+
+    if requested == "mps":
+        if not mps_available():
+            raise SystemExit("Embedding device 'mps' was requested, but torch.backends.mps is not available.")
+        return "mps"
+
+    if requested.startswith("xpu"):
+        if not (hasattr(torch, "xpu") and torch.xpu.is_available()):
+            raise SystemExit("Embedding device 'xpu' was requested, but torch.xpu is not available.")
+        return requested
+
+    raise SystemExit("Unknown embedding device. Use auto, rocm, rocm:<id>, cuda, cuda:<id>, mps, xpu, or cpu.")
+
+
+def print_torch_runtime_report() -> None:
+    print("\n--- RUNTIME DEVICE CHECK ---")
+    if "CUDA_VISIBLE_DEVICES" in os.environ:
+        value = os.environ.get("CUDA_VISIBLE_DEVICES") or "<empty>"
+        print(f"CUDA_VISIBLE_DEVICES: {value}")
+    if torch.cuda.is_available():
+        backend = "ROCm/HIP" if torch.version.hip is not None else "CUDA"
+        print(f"PyTorch GPU backend: {backend}")
+        if torch.version.hip is not None:
+            print(f"ROCm HIP version: {torch.version.hip}")
+            print("PyTorch exposes ROCm GPUs as cuda:* devices.")
+        print(f"Visible GPU count: {torch.cuda.device_count()}")
+        for index in range(torch.cuda.device_count()):
+            props = torch.cuda.get_device_properties(index)
+            arch = getattr(props, "gcnArchName", "")
+            capability = torch.cuda.get_device_capability(index)
+            arch_text = f", arch={arch}" if arch else f", compute capability={capability}"
+            print(f"GPU {index}: {props.name}, total VRAM={bytes_to_gib(props.total_memory)}{arch_text}")
+        return
+
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        print("PyTorch GPU backend: XPU")
+        print(f"Visible XPU count: {torch.xpu.device_count()}")
+        return
+
+    if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+        print("PyTorch GPU backend: MPS")
+        return
+
+    print("PyTorch GPU backend: none visible")
+    print("Runtime placement: CPU fallback")
+
+
+def sentence_transformer_device(embedder) -> str:
+    for attr in ("device", "_target_device"):
+        device = getattr(embedder, attr, None)
+        if device is not None:
+            return normalize_device_key(device)
+    try:
+        return normalize_device_key(next(embedder.parameters()).device)
+    except StopIteration:
+        return "unknown"
+
+
+def print_embedder_device_report(embedder) -> None:
+    device_key = sentence_transformer_device(embedder)
+    status = "GPU active" if is_gpu_device(device_key) else "CPU fallback"
+    print(f"RAG embedder actual device: {device_label(device_key)} ({status})")
+
+
+def find_hf_device_map(model):
+    seen = set()
+
+    def visit(obj, depth: int):
+        if obj is None or depth > 4:
+            return None
+        obj_id = id(obj)
+        if obj_id in seen:
+            return None
+        seen.add(obj_id)
+
+        device_map = getattr(obj, "hf_device_map", None)
+        if isinstance(device_map, dict) and device_map:
+            return device_map
+
+        for attr in ("base_model", "model", "module"):
+            nested = getattr(obj, attr, None)
+            found = visit(nested, depth + 1)
+            if found:
+                return found
+        return None
+
+    return visit(model, 0)
+
+
+def summarize_parameter_devices(model) -> dict[str, dict[str, int]]:
+    summary: dict[str, dict[str, int]] = {}
+    for param in model.parameters():
+        key = normalize_device_key(param.device)
+        entry = summary.setdefault(key, {"tensors": 0, "bytes": 0})
+        entry["tensors"] += 1
+        entry["bytes"] += param.numel() * param.element_size()
+    return summary
+
+
+def print_generator_device_report(model) -> None:
+    print("\n--- GENERATOR DEVICE PLACEMENT ---")
+    device_map = find_hf_device_map(model)
+    if device_map:
+        counts: dict[str, int] = {}
+        for device in device_map.values():
+            key = normalize_device_key(device)
+            counts[key] = counts.get(key, 0) + 1
+        parts = [f"{device_label(key)}: {count} modules" for key, count in sorted(counts.items())]
+        print(f"Generator hf_device_map: {', '.join(parts)}")
+        if any(is_gpu_device(key) for key in counts):
+            print("Generator GPU usage: GPU modules are assigned")
+        else:
+            print("Generator GPU usage: no GPU modules assigned; CPU/offload fallback")
+    else:
+        print("Generator hf_device_map: <not reported by model>")
+
+    param_summary = summarize_parameter_devices(model)
+    if not param_summary:
+        print("Generator parameter devices: <no parameters reported>")
+        return
+
+    parts = []
+    for key, entry in sorted(param_summary.items()):
+        parts.append(f"{device_label(key)}: {entry['tensors']} tensors, {bytes_to_gib(entry['bytes'])}")
+    print(f"Generator parameter devices: {', '.join(parts)}")
+    if any(is_gpu_device(key) for key in param_summary):
+        print("Generator parameter placement: GPU active")
+    else:
+        print("Generator parameter placement: CPU/offload fallback")
+
+
 def load_chunks(chunks_file: Path):
     rows = []
     with chunks_file.open("r", encoding="utf-8") as f:
         for line in f:
             rows.append(json.loads(line))
     return rows
+
+
+def load_index_config(rag_dir: Path) -> dict:
+    config_file = rag_dir / "index_config.json"
+    if not config_file.exists():
+        return {}
+    try:
+        return json.loads(config_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid RAG index config at {config_file}: {exc}") from exc
+
+
+def resolve_embed_model(index_config: dict, requested: str) -> str:
+    indexed = index_config.get("embed_model")
+    if not indexed:
+        return requested
+    if requested and requested != indexed:
+        print(f"RAG index was built with {indexed}; using it instead of requested {requested}.")
+    return indexed
+
+
+def validate_embed_dimension(index, embedder, embed_model: str) -> None:
+    index_dim = getattr(index, "d", None)
+    if hasattr(embedder, "get_embedding_dimension"):
+        embed_dim = embedder.get_embedding_dimension()
+    else:
+        embed_dim = embedder.get_sentence_embedding_dimension()
+    if index_dim is not None and embed_dim is not None and int(index_dim) != int(embed_dim):
+        raise SystemExit(
+            "\n".join(
+                [
+                    "RAG index and embedder dimensions do not match.",
+                    f"Index dimension: {index_dim}",
+                    f"Embedder dimension for {embed_model}: {embed_dim}",
+                    "Rebuild the RAG index with ./build_rag_index.zsh, or use the embedder recorded in index_config.json.",
+                ]
+            )
+        )
 
 
 def retrieve(query, embedder, index, rows, top_k=RETRIEVE_K):
@@ -79,24 +345,33 @@ def main() -> int:
     parser.add_argument("--system-prompt", default=SYSTEM_PROMPT)
     args = parser.parse_args()
 
+    print_torch_runtime_report()
+
     rag_dir = Path(args.rag_dir).expanduser()
     chunks_file = rag_dir / "chunks.jsonl"
     index_file = rag_dir / "index.faiss"
     adapter_dir = Path(args.adapter_dir).expanduser()
 
+    index_config = load_index_config(rag_dir)
     rows = load_chunks(chunks_file)
     index = faiss.read_index(str(index_file))
-    validate_embedding_model(args.embed_model)
+    embed_model = resolve_embed_model(index_config, args.embed_model)
+    validate_embedding_model(embed_model)
     validate_generator_model(args.generator_model)
-    embed_device = None if args.embed_device == "auto" else args.embed_device
-    print(f"Loading embedder: {args.embed_model} on {embed_device or 'auto'}")
-    embedder = SentenceTransformer(args.embed_model, device=embed_device)
+    embed_device = resolve_embed_device(args.embed_device)
+    if embed_device != args.embed_device:
+        print(f"Resolved RAG embedder device: requested {args.embed_device!r} -> {embed_device!r}")
+    print(f"Loading embedder: {embed_model} on {embed_device}")
+    embedder = SentenceTransformer(embed_model, device=embed_device)
+    print_embedder_device_report(embedder)
+    validate_embed_dimension(index, embedder, embed_model)
 
     tokenizer, model = load_generation_model(
         base_model=args.generator_model,
         adapter_path=adapter_dir,
         use_adapter=not args.no_adapter and adapter_dir.exists(),
     )
+    print_generator_device_report(model)
 
     while True:
         query = input("\nPrompt> ").strip()
