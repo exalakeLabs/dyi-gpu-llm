@@ -156,15 +156,17 @@ embedder stays on CPU by default so the generator gets the VRAM:
 ```bash
 RAG_EMBED_DEVICE=cpu
 GENERATOR_DEVICE_MAP=auto
-GENERATOR_GPU_MEMORY=6GiB
+GENERATOR_GPU_MEMORY=4GiB
 GENERATOR_MXFP4_DEQUANTIZE=0
 MAX_CONTEXT_CHARS=2048
 MAX_NEW_TOKENS=96
 ```
 
 On bf16-capable CUDA cards, the runtime uses bf16 automatically unless
-`GENERATOR_DTYPE` is set. If CUDA still reports `device not ready` during
-generation, reboot the host to reset the driver, then lower the cap further:
+`GENERATOR_DTYPE` is set. Avoid large caps such as `8GiB` on a 12 GB card:
+MXFP4 conversion and attention kernels need temporary VRAM above the placed
+model weights. If CUDA reports `device not ready` during loading or generation,
+reboot the host to reset the driver, then retry the conservative cap:
 
 ```bash
 GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh

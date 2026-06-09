@@ -99,6 +99,31 @@ def _device_map(device_map: str = GENERATOR_DEVICE_MAP):
     return device_map
 
 
+def _exception_chain_text(exc: BaseException) -> str:
+    messages = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        messages.append(str(current))
+        current = current.__cause__ or current.__context__
+    return "\n".join(messages)
+
+
+def _cuda_not_ready_error(phase: str) -> RuntimeError:
+    return RuntimeError(
+        "\n".join(
+            [
+                f"CUDA reported that the GPU is not ready during {phase}.",
+                "This usually means the CUDA driver/context reset or became wedged after a GPU kernel failure.",
+                "Reboot the host before retrying; once this happens, later CUDA calls often keep failing.",
+                "On a 12 GB RTX/NVIDIA card, retry with GENERATOR_GPU_MEMORY=4GiB.",
+                "For diagnostics, run: journalctl -k -b --no-pager | grep -Ei 'NVRM|Xid|GPU|reset|nvidia'",
+            ]
+        )
+    )
+
+
 def patch_rocm_isin() -> None:
     """
     Work around a ROCm bug where torch.isin raises on GPU tensors.
@@ -202,7 +227,23 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
         print(f"Generator offload_folder: {model_kwargs['offload_folder']}")
     if "attn_implementation" in model_kwargs:
         print(f"Generator attention: {model_kwargs['attn_implementation']}")
-    return AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
+    try:
+        return AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
+    except RuntimeError as exc:
+        message = _exception_chain_text(exc)
+        if "CUDA driver error: device not ready" in message:
+            raise _cuda_not_ready_error("model loading / MXFP4 conversion") from exc
+        if "automatic conversion of the weights" in message and "gpt-oss" in (base_model or "").lower():
+            raise RuntimeError(
+                "\n".join(
+                    [
+                        "gpt-oss MXFP4 weight conversion failed while loading.",
+                        "If the loading report above mentions 'CUDA driver error: device not ready' or 'Mxfp4Deserialize', reboot the host and retry with GENERATOR_GPU_MEMORY=4GiB.",
+                        "If it repeats after a reboot, verify that the NVIDIA driver and PyTorch CUDA wheel support this RTX 50-series GPU.",
+                    ]
+                )
+            ) from exc
+        raise
 
 
 def load_generation_model(
@@ -265,18 +306,9 @@ def generate_text(tokenizer, model, messages, **generate_kwargs) -> str:
         with torch.inference_mode():
             outputs = model.generate(**inputs, **defaults)
     except RuntimeError as exc:
-        message = str(exc)
+        message = _exception_chain_text(exc)
         if "CUDA driver error: device not ready" in message:
-            raise RuntimeError(
-                "\n".join(
-                    [
-                        "CUDA reported that the GPU is not ready during generation.",
-                        "This usually means the CUDA driver/context reset or became wedged after a GPU kernel failure.",
-                        "Reboot the host, then retry with a lower cap such as GENERATOR_GPU_MEMORY=4GiB.",
-                        "For diagnostics, run: journalctl -k -b --no-pager | grep -Ei 'NVRM|Xid|GPU|reset|nvidia'",
-                    ]
-                )
-            ) from exc
+            raise _cuda_not_ready_error("generation") from exc
         raise
 
     new_tokens = outputs[0][input_tokens:]

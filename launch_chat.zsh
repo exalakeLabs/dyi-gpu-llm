@@ -17,6 +17,7 @@ LOW_VRAM_NAME=""
 LOW_VRAM_TOTAL_MIB=""
 LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-}"
 GPU_VISIBILITY_NOTE=""
+GPU_CAP_WARNING=""
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
 HOST_RAM_GIB=""
 DEFAULT_GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY_FALLBACK:-24GiB}"
@@ -110,9 +111,16 @@ if (( LOW_VRAM_GPU )); then
     GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
     if [[ -n "${GENERATOR_GPU_MEMORY:-}" ]]; then
       GEN_GPU_MEMORY="$GENERATOR_GPU_MEMORY"
+      GEN_GPU_MEMORY_GIB="${GEN_GPU_MEMORY:l}"
+      if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 && "$GEN_GPU_MEMORY_GIB" == <->gib ]]; then
+        GEN_GPU_MEMORY_GIB="${GEN_GPU_MEMORY_GIB%gib}"
+        if (( GEN_GPU_MEMORY_GIB > 6 )); then
+          GPU_CAP_WARNING="GENERATOR_GPU_MEMORY=$GEN_GPU_MEMORY leaves little MXFP4 conversion headroom on a 12 GB NVIDIA GPU; retry with 4GiB if CUDA reports device not ready."
+        fi
+      fi
     elif [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
       if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
-        GEN_GPU_MEMORY="6GiB"
+        GEN_GPU_MEMORY="4GiB"
       else
         GEN_GPU_MEMORY="14GiB"
       fi
@@ -244,6 +252,9 @@ if (( LOW_VRAM_GPU )); then
 fi
 print "Generator device_map: $GENERATOR_DEVICE_MAP"
 print "Generator GPU memory cap: ${GENERATOR_GPU_MEMORY:-<none>}"
+if [[ -n "$GPU_CAP_WARNING" ]]; then
+  print "warning: $GPU_CAP_WARNING"
+fi
 print "Generator CPU memory cap: $GENERATOR_CPU_MEMORY"
 if [[ -n "$HOST_RAM_GIB" && "$GEN_CPU_MEMORY_OVERRIDDEN" == "0" ]]; then
   print "Host RAM detected: ${HOST_RAM_GIB}GiB; CPU memory reserve: ${GENERATOR_CPU_RESERVE_GIB:-8}GiB"
