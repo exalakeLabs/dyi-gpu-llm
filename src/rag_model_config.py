@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 DEFAULT_EMBED_MODEL = "BAAI/bge-base-en-v1.5"
-DEFAULT_GENERATOR_MODEL = "openai/gpt-oss-20b"
+DEFAULT_GENERATOR_MODEL = "Qwen/Qwen2.5-3B-Instruct"
 DEFAULT_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
 
 

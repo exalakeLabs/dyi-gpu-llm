@@ -4,9 +4,52 @@ set -euo pipefail
 ROOT="${0:A:h}"
 cd "$ROOT"
 
+PRESERVE_RUNTIME_ENV=(
+  ADAPTER_DIR
+  BASE_MODEL
+  CHAT_REQUIRE_ACCELERATOR
+  CUDA_VISIBLE_DEVICES
+  CUDA_VISIBLE_DEVICES_VALUE
+  EMBED_MODEL
+  GENERATOR_ATTN_IMPLEMENTATION
+  GENERATOR_CPU_MEMORY
+  GENERATOR_CPU_MEMORY_FALLBACK
+  GENERATOR_CPU_RESERVE_GIB
+  GENERATOR_DEVICE_MAP
+  GENERATOR_DTYPE
+  GENERATOR_GPU_MEMORY
+  GENERATOR_MODEL
+  GENERATOR_MXFP4_DEQUANTIZE
+  GENERATOR_OFFLOAD_DIR
+  HSA_OVERRIDE_GFX_VERSION
+  LAUNCH_CHAT_DRY_RUN
+  LOW_VRAM_CUDA_RUNTIME
+  LOW_VRAM_HIDE_GPU
+  LOW_VRAM_NVIDIA_RUNTIME
+  LOW_VRAM_ROCM_RUNTIME
+  MAX_CONTEXT_CHARS
+  MAX_NEW_TOKENS
+  PYTHON
+  PYTORCH_ALLOC_CONF
+  PYTORCH_CUDA_ALLOC_CONF
+  RAG_DIR
+  RAG_EMBED_DEVICE
+  RERANKER_MODEL
+  RETRIEVE_K
+)
+typeset -A RUNTIME_ENV_OVERRIDES
+for name in "${PRESERVE_RUNTIME_ENV[@]}"; do
+  if [[ -n "${(P)name+x}" ]]; then
+    RUNTIME_ENV_OVERRIDES[$name]="${(P)name}"
+  fi
+done
+
 if [[ -f "$ROOT/.runtime" ]]; then
   source "$ROOT/.runtime" >/dev/null
 fi
+for name value in "${(@kv)RUNTIME_ENV_OVERRIDES}"; do
+  export "$name=$value"
+done
 
 GENERATOR="${GENERATOR_MODEL:-openai/gpt-oss-20b}"
 EMBED="${EMBED_MODEL:-BAAI/bge-base-en-v1.5}"
@@ -19,6 +62,7 @@ LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-}"
 GPU_VISIBILITY_NOTE=""
 GPU_CAP_WARNING=""
 GENERATOR_RUNTIME_WARNING=""
+REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-}"
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
 HOST_RAM_GIB=""
 DEFAULT_GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY_FALLBACK:-24GiB}"
@@ -97,7 +141,7 @@ PY
       LOW_VRAM_TOTAL_MIB="$TORCH_GPU_TOTAL_MIB"
       if [[ -z "$LOW_VRAM_RUNTIME" ]]; then
         if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
-          LOW_VRAM_RUNTIME="${LOW_VRAM_ROCM_RUNTIME:-cpu}"
+          LOW_VRAM_RUNTIME="${LOW_VRAM_ROCM_RUNTIME:-rocm}"
         else
           LOW_VRAM_RUNTIME="${LOW_VRAM_CUDA_RUNTIME:-cuda}"
         fi
@@ -109,7 +153,13 @@ fi
 EMBED_DEVICE="${RAG_EMBED_DEVICE:-cpu}"
 if (( LOW_VRAM_GPU )); then
   if [[ "${LOW_VRAM_RUNTIME:l}" == "cuda" || "${LOW_VRAM_RUNTIME:l}" == "rocm" || "${LOW_VRAM_RUNTIME:l}" == "gpu" ]]; then
-    GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
+    if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
+      GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-single}"
+      REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-rocm}"
+    else
+      GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
+      REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-cuda}"
+    fi
     if [[ -n "${GENERATOR_GPU_MEMORY:-}" ]]; then
       GEN_GPU_MEMORY="$GENERATOR_GPU_MEMORY"
       GEN_GPU_MEMORY_GIB="${GEN_GPU_MEMORY:l}"
@@ -125,19 +175,22 @@ if (( LOW_VRAM_GPU )); then
       else
         GEN_GPU_MEMORY="14GiB"
       fi
+    elif [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
+      GEN_GPU_MEMORY="7GiB"
     else
-      GEN_GPU_MEMORY="3GiB"
+      GEN_GPU_MEMORY="5GiB"
     fi
     GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-0}"
     if [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
       GPU_VISIBILITY_NOTE="CUDA stays visible for RTX/NVIDIA; RAG embedder defaults to CPU to preserve VRAM"
     else
-      GPU_VISIBILITY_NOTE="generator is opted into low-VRAM GPU mode; leave conversion headroom"
+      GPU_VISIBILITY_NOTE="ROCm/HIP stays visible; PyTorch exposes the Radeon GPU as cuda:0; generator is required to use ROCm"
     fi
   else
     CPU_RUNTIME="${LOW_VRAM_RUNTIME:l}"
     LOW_VRAM_RUNTIME="cpu"
     CPU_RUNTIME="cpu"
+    REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-}"
     GEN_DEVICE_MAP="cpu"
     GEN_GPU_MEMORY=""
     GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-1}"
@@ -209,6 +262,13 @@ if [[ "${GENERATOR:l}" == *gpt-oss* && "${GEN_ATTN:l}" == "sdpa" ]]; then
   GEN_ATTN="eager"
 fi
 
+if (( LOW_VRAM_GPU )) && [[ "$LOW_VRAM_KIND" == "ROCm" && "${LOW_VRAM_RUNTIME:l}" == "rocm" && "${GENERATOR:l}" == *gpt-oss* ]]; then
+  print -u2 "error: $GENERATOR is not a workable Radeon RX 7600 chat model in this Transformers path."
+  print -u2 "Set GENERATOR_MODEL and BASE_MODEL to a smaller Hugging Face model, for example:"
+  print -u2 "  GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct BASE_MODEL=Qwen/Qwen2.5-3B-Instruct ./launch_chat.zsh"
+  exit 2
+fi
+
 if (( LOW_VRAM_GPU )) && [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
   if [[ "${LOW_VRAM_RUNTIME:l}" == "cuda" || "${LOW_VRAM_RUNTIME:l}" == "gpu" ]]; then
     if [[ "${GENERATOR:l}" == *gpt-oss* && "${GEN_DEVICE_MAP:l}" == "auto" && "$GEN_MXFP4_DEQUANTIZE" == "0" ]]; then
@@ -243,6 +303,7 @@ export GENERATOR_DTYPE="$GEN_DTYPE"
 export GENERATOR_MXFP4_DEQUANTIZE="$GEN_MXFP4_DEQUANTIZE"
 export GENERATOR_OFFLOAD_DIR="$GEN_OFFLOAD_DIR"
 export GENERATOR_ATTN_IMPLEMENTATION="$GEN_ATTN"
+export CHAT_REQUIRE_ACCELERATOR="$REQUIRE_ACCELERATOR"
 export PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-$PYTORCH_CUDA_ALLOC_CONF}"
 if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE+x}" ]]; then
@@ -270,6 +331,7 @@ if [[ -n "$HOST_RAM_GIB" && "$GEN_CPU_MEMORY_OVERRIDDEN" == "0" ]]; then
 fi
 print "Generator dtype: $GENERATOR_DTYPE"
 print "Generator MXFP4 dequantize: $GENERATOR_MXFP4_DEQUANTIZE"
+print "Required accelerator: ${CHAT_REQUIRE_ACCELERATOR:-<none>}"
 if [[ -n "$GENERATOR_RUNTIME_WARNING" ]]; then
   print "warning: $GENERATOR_RUNTIME_WARNING"
 fi
@@ -282,10 +344,11 @@ if [[ -n "$GPU_VISIBILITY_NOTE" ]]; then
   print "GPU visibility note: $GPU_VISIBILITY_NOTE"
   if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
     if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
-      print "ROCm generator opt-in: LOW_VRAM_ROCM_RUNTIME=rocm RAG_EMBED_DEVICE=rocm ./launch_chat.zsh"
+      print "ROCm generator opt-in: LOW_VRAM_ROCM_RUNTIME=rocm ./launch_chat.zsh"
       print "ROCm full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
     else
       print "ROCm CPU fallback: LOW_VRAM_ROCM_RUNTIME=cpu ./launch_chat.zsh"
+      print "ROCm embedder opt-in: RAG_EMBED_DEVICE=rocm ./launch_chat.zsh"
     fi
   else
     if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
@@ -309,11 +372,17 @@ if [[ "${LAUNCH_CHAT_DRY_RUN:-0}" == "1" ]]; then
   exit 0
 fi
 
-exec "${PYTHON:-python3}" ./src/chat_rag.py \
-  --rag-dir "${RAG_DIR:-rag}" \
-  --generator-model "$GENERATOR" \
-  --embed-model "$EMBED" \
-  --embed-device "$EMBED_DEVICE" \
-  --top-k "$RETRIEVE_TOP_K" \
-  --max-context-chars "$CONTEXT_CHARS" \
+CHAT_ARGS=(
+  --rag-dir "${RAG_DIR:-rag}"
+  --generator-model "$GENERATOR"
+  --embed-model "$EMBED"
+  --embed-device "$EMBED_DEVICE"
+  --top-k "$RETRIEVE_TOP_K"
+  --max-context-chars "$CONTEXT_CHARS"
   --max-new-tokens "$NEW_TOKENS"
+)
+if [[ -n "$REQUIRE_ACCELERATOR" ]]; then
+  CHAT_ARGS+=(--require-accelerator "$REQUIRE_ACCELERATOR")
+fi
+
+exec "${PYTHON:-python3}" ./src/chat_rag.py "${CHAT_ARGS[@]}"

@@ -1,8 +1,8 @@
 # Training And RAG Guide
 
-This repository is set up to run RAG/runtime generation through
-**openai/gpt-oss-20b** with Transformers, while keeping BGE models for
-embedding and reranking.
+This repository is set up to run RAG/runtime generation through a local
+Transformers generator, while keeping BGE models for embedding and reranking.
+The current low-VRAM GPU default is **Qwen/Qwen2.5-3B-Instruct**.
 
 ## RAG With Prepared Text And gpt-oss
 
@@ -83,7 +83,7 @@ python src/train_lora_gpu.py
 
 Default training settings come from `.env.default`:
 
-- Base model: `openai/gpt-oss-20b`
+- Base model: `Qwen/Qwen2.5-3B-Instruct`
 - Data file: `${CORPUS_DIR}/train.jsonl`
 - Output dir: `${MODEL_DIR}/output_partial`
 - LoRA targets: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
@@ -126,15 +126,15 @@ uvicorn --app-dir src serve_tuned:app --host 127.0.0.1 --port 8000
 
 Serving and chat entrypoints share the runtime model loader in `src/model_runtime.py`.
 
-## GPT-OSS Runtime
+## Chat Runtime
 
 The default runtime model settings live in `.env.default`:
 
 ```bash
 EMBED_MODEL=BAAI/bge-base-en-v1.5
 RERANKER_MODEL=BAAI/bge-reranker-v2-m3
-GENERATOR_MODEL=openai/gpt-oss-20b
-BASE_MODEL=openai/gpt-oss-20b
+GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct
+BASE_MODEL=Qwen/Qwen2.5-3B-Instruct
 ```
 
 `EMBED_MODEL` and `RERANKER_MODEL` must stay on embedding/reranking models.
@@ -188,15 +188,33 @@ For debugging only, bypass the guard with:
 GENERATOR_ALLOW_META_OFFLOAD=1 ./launch_chat.zsh
 ```
 
-On 8 GB Radeon cards such as the RX 7600, Transformers may dequantize the
-gpt-oss MXFP4 checkpoint instead of running it in-place as 4-bit weights. The
-launcher defaults ROCm low-VRAM cards to CPU with explicit MXFP4 dequantization,
-while leaving the GPU visible for the RAG embedder:
+On 8 GB Radeon cards such as the RX 7600, the launcher now defaults ROCm to the
+GPU instead of CPU fallback. PyTorch exposes ROCm devices as `cuda:*`, so the
+runtime requires the generator to land on `cuda:0` when ROCm mode is selected.
+Use a smaller Hugging Face generator that fits the card, for example:
 
 ```bash
-RAG_EMBED_DEVICE=auto
-GENERATOR_DEVICE_MAP=cpu
-GENERATOR_MXFP4_DEQUANTIZE=1
+GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct
+BASE_MODEL=Qwen/Qwen2.5-3B-Instruct
+GENERATOR_DEVICE_MAP=single
+GENERATOR_GPU_MEMORY=7GiB
+RAG_EMBED_DEVICE=cpu
+```
+
+The RAG embedder stays on CPU by default to preserve the RX 7600's 8 GB VRAM
+for generation. Move it to ROCm only if the selected generator leaves enough
+headroom:
+
+```bash
+RAG_EMBED_DEVICE=rocm ./launch_chat.zsh
+```
+
+`openai/gpt-oss-20b` is not a workable RX 7600 chat model in this Transformers
+path. The launcher fails fast for that combination instead of falling back to
+CPU. To explicitly force the old CPU behavior:
+
+```bash
+LOW_VRAM_ROCM_RUNTIME=cpu ./launch_chat.zsh
 ```
 
 By default, `GENERATOR_CPU_MEMORY` is computed from host RAM and reserves 8 GiB
@@ -208,25 +226,8 @@ the machine has more headroom:
 GENERATOR_CPU_MEMORY=24GiB ./launch_chat.zsh
 ```
 
-For a hybrid ROCm run, opt in explicitly and leave conversion headroom:
-
-```bash
-LOW_VRAM_ROCM_RUNTIME=rocm
-RAG_EMBED_DEVICE=rocm
-GENERATOR_GPU_MEMORY=3GiB
-./launch_chat.zsh
-```
-
-If the explicit dequantized CPU path still touches the GPU on your stack, fully
-hide the GPU from the Python process:
-
-```bash
-LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh
-```
-
 Increase `GENERATOR_GPU_MEMORY` only if there is free VRAM after the model
-loads. This can run, but it will be much slower than native MXFP4 execution on
-supported hardware.
+loads.
 
 ## Practical tuning tips
 

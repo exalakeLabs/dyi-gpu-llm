@@ -23,6 +23,7 @@ MAX_CONTEXT_CHARS = env_int("MAX_CONTEXT_CHARS", 0)
 RAG_DIR = env_path("RAG_DIR", "rag")
 RETRIEVE_K = env_int("RETRIEVE_K", 24)
 SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
+REQUIRE_ACCELERATOR = env_str("CHAT_REQUIRE_ACCELERATOR")
 
 
 def bytes_to_gib(value: int) -> str:
@@ -71,6 +72,21 @@ def device_label(device_key: str) -> str:
 
 def is_gpu_device(device_key: str) -> bool:
     return device_key.startswith("cuda") or device_key.startswith("xpu") or device_key == "mps"
+
+
+def normalize_accelerator(value: str | None) -> str:
+    requested = (value or "").strip().lower()
+    if requested in {"", "0", "false", "none", "off", "cpu"}:
+        return ""
+    if requested in {"gpu", "accelerator"}:
+        return "gpu"
+    if requested in {"rocm", "hip", "amd", "radeon"}:
+        return "rocm"
+    if requested in {"cuda", "nvidia"}:
+        return "cuda"
+    if requested in {"mps", "xpu"}:
+        return requested
+    raise SystemExit("Unknown required accelerator. Use rocm, cuda, gpu, mps, xpu, or none.")
 
 
 def device_index(device_key: str) -> int:
@@ -139,6 +155,8 @@ def print_torch_runtime_report() -> None:
     if "CUDA_VISIBLE_DEVICES" in os.environ:
         value = os.environ.get("CUDA_VISIBLE_DEVICES") or "<empty>"
         print(f"CUDA_VISIBLE_DEVICES: {value}")
+    if "HSA_OVERRIDE_GFX_VERSION" in os.environ:
+        print(f"HSA_OVERRIDE_GFX_VERSION: {os.environ.get('HSA_OVERRIDE_GFX_VERSION') or '<empty>'}")
     if torch.cuda.is_available():
         backend = "ROCm/HIP" if torch.version.hip is not None else "CUDA"
         print(f"PyTorch GPU backend: {backend}")
@@ -165,6 +183,61 @@ def print_torch_runtime_report() -> None:
 
     print("PyTorch GPU backend: none visible")
     print("Runtime placement: CPU fallback")
+
+
+def validate_required_accelerator(required: str) -> str:
+    required = normalize_accelerator(required)
+    if not required:
+        return ""
+
+    if required == "rocm":
+        if not torch.cuda.is_available():
+            raise SystemExit(
+                "ROCm was required, but PyTorch does not see a CUDA/ROCm device.\n"
+                f"torch={torch.__version__}, torch.version.hip={torch.version.hip}\n"
+                "Check ROCm, HSA_OVERRIDE_GFX_VERSION, and LOW_VRAM_HIDE_GPU."
+            )
+        if torch.version.hip is None:
+            raise SystemExit(
+                "ROCm was required, but this PyTorch build is CUDA/NVIDIA or CPU-only, not HIP/ROCm."
+            )
+        print("Required accelerator: ROCm/HIP satisfied by cuda:0")
+        return required
+
+    if required == "cuda":
+        if not torch.cuda.is_available():
+            raise SystemExit("CUDA was required, but PyTorch does not see a CUDA GPU.")
+        if torch.version.hip is not None:
+            raise SystemExit("CUDA/NVIDIA was required, but this PyTorch build is ROCm/HIP.")
+        print("Required accelerator: CUDA satisfied by cuda:0")
+        return required
+
+    if required == "gpu":
+        if torch.cuda.is_available():
+            backend = "ROCm/HIP" if torch.version.hip is not None else "CUDA"
+            print(f"Required accelerator: GPU satisfied by {backend} cuda:0")
+            return required
+        if hasattr(torch, "xpu") and torch.xpu.is_available():
+            print("Required accelerator: GPU satisfied by XPU")
+            return required
+        if mps_available():
+            print("Required accelerator: GPU satisfied by MPS")
+            return required
+        raise SystemExit("A GPU accelerator was required, but PyTorch does not see one.")
+
+    if required == "mps":
+        if not mps_available():
+            raise SystemExit("MPS was required, but torch.backends.mps is not available.")
+        print("Required accelerator: MPS satisfied")
+        return required
+
+    if required == "xpu":
+        if not (hasattr(torch, "xpu") and torch.xpu.is_available()):
+            raise SystemExit("XPU was required, but torch.xpu is not available.")
+        print("Required accelerator: XPU satisfied")
+        return required
+
+    return required
 
 
 def sentence_transformer_device(embedder) -> str:
@@ -249,6 +322,51 @@ def print_generator_device_report(model) -> None:
         print("Generator parameter placement: GPU active")
     else:
         print("Generator parameter placement: CPU/offload fallback")
+
+
+def generator_device_keys(model) -> set[str]:
+    keys: set[str] = set()
+    device_map = find_hf_device_map(model)
+    if device_map:
+        keys.update(normalize_device_key(device) for device in device_map.values())
+    keys.update(summarize_parameter_devices(model).keys())
+    return keys
+
+
+def validate_generator_accelerator(model, required: str) -> None:
+    required = normalize_accelerator(required)
+    if not required:
+        return
+
+    keys = generator_device_keys(model)
+    uses_torch_cuda_device = any(key.startswith("cuda") for key in keys)
+    uses_any_gpu = any(is_gpu_device(key) for key in keys)
+
+    if required == "rocm":
+        if torch.version.hip is None or not uses_torch_cuda_device:
+            placement = ", ".join(sorted(keys)) or "<none>"
+            raise SystemExit(
+                "Generator was required to use ROCm, but it was not placed on the Radeon GPU.\n"
+                f"Observed generator devices: {placement}\n"
+                "Use LOW_VRAM_ROCM_RUNTIME=rocm and a generator model that fits the RX 7600."
+            )
+        return
+
+    if required == "cuda":
+        if torch.version.hip is not None or not uses_torch_cuda_device:
+            placement = ", ".join(sorted(keys)) or "<none>"
+            raise SystemExit(
+                "Generator was required to use CUDA/NVIDIA, but it was not placed on a CUDA GPU.\n"
+                f"Observed generator devices: {placement}"
+            )
+        return
+
+    if required == "gpu" and not uses_any_gpu:
+        placement = ", ".join(sorted(keys)) or "<none>"
+        raise SystemExit(
+            "Generator was required to use a GPU accelerator, but it fell back to CPU/offload.\n"
+            f"Observed generator devices: {placement}"
+        )
 
 
 def load_chunks(chunks_file: Path):
@@ -343,9 +461,11 @@ def main() -> int:
     parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     parser.add_argument("--max-context-chars", type=int, default=MAX_CONTEXT_CHARS)
     parser.add_argument("--system-prompt", default=SYSTEM_PROMPT)
+    parser.add_argument("--require-accelerator", default=REQUIRE_ACCELERATOR)
     args = parser.parse_args()
 
     print_torch_runtime_report()
+    required_accelerator = validate_required_accelerator(args.require_accelerator)
 
     rag_dir = Path(args.rag_dir).expanduser()
     chunks_file = rag_dir / "chunks.jsonl"
@@ -372,6 +492,7 @@ def main() -> int:
         use_adapter=not args.no_adapter and adapter_dir.exists(),
     )
     print_generator_device_report(model)
+    validate_generator_accelerator(model, required_accelerator)
 
     while True:
         query = input("\nPrompt> ").strip()
