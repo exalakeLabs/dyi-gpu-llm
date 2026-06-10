@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from runtime_env import is_databricks
+
 
 ROOT = Path(__file__).resolve().parent
 TRAIN_GPU = ROOT / "train_lora_gpu.py"
@@ -28,6 +30,14 @@ def python_executable() -> str:
 
 
 def cuda_available(py: str) -> bool:
+    if is_databricks():
+        try:
+            import torch
+
+            return bool(torch.cuda.is_available())
+        except Exception:
+            return False
+
     probe = """
 import torch
 print("1" if torch.cuda.is_available() else "0")
@@ -47,6 +57,21 @@ print("1" if torch.cuda.is_available() else "0")
 def ensure_exists(path: Path) -> None:
     if not path.exists():
         raise FileNotFoundError(f"Required file not found: {path}")
+
+
+def run_databricks_trainer(trainer: Path) -> int:
+    old_argv = sys.argv[:]
+    sys.argv = [trainer.name]
+    try:
+        if trainer == TRAIN_GPU:
+            import train_lora_gpu
+
+            return int(train_lora_gpu.main())
+        import train_lora_cpu
+
+        return int(train_lora_cpu.main())
+    finally:
+        sys.argv = old_argv
 
 
 def main() -> int:
@@ -71,7 +96,11 @@ def main() -> int:
         print("[INFO] CUDA not detected. Using CPU trainer.")
         trainer = TRAIN_CPU
 
-    rc = run_step([py, str(trainer)])
+    if is_databricks():
+        print("[INFO] Databricks detected. Running trainer in the notebook process.")
+        rc = run_databricks_trainer(trainer)
+    else:
+        rc = run_step([py, str(trainer)])
     if rc != 0:
         print(f"[ERROR] {trainer.name} failed with exit code {rc}")
         return rc

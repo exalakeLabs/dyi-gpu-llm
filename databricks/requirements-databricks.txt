@@ -1,0 +1,21 @@
+# Databricks Runtime ML already includes PyTorch, torchvision, torchaudio,
+# transformers-adjacent ML libraries, CUDA drivers, and notebook infrastructure.
+# Install this file on a cluster only when the packages are missing or stale.
+transformers>=4.55.0
+datasets>=2.16.0
+peft>=0.11.0
+trl>=0.8.0
+accelerate>=0.30.0
+safetensors
+sentence-transformers>=2.6.0
+kernels>=0.12.0,<0.15.0
+kernels-data>=0.14.0,<0.15.0
+faiss-cpu>=1.7.4
+numpy>=1.24.0
+pydantic>=2.5.0
+requests>=2.31.0
+pypdf>=4.0.0
+cryptography>=41.0.0
+truststore>=0.8.0
+sentencepiece
+evaluate

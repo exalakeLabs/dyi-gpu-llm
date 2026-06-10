@@ -4,6 +4,67 @@ This repository is set up to run RAG/runtime generation through
 **openai/gpt-oss-20b** with Transformers, while keeping BGE models for
 embedding and reranking.
 
+## Databricks Notebook Workflow
+
+The project now includes Databricks source notebooks under
+`databricks/notebooks/`. Import the repo into Databricks Repos, attach a
+Databricks Runtime ML GPU cluster, and run `00_setup` first.
+
+Recommended Databricks data root:
+
+```text
+/dbfs/FileStore/llama32-local
+```
+
+You can also use a Unity Catalog Volume path such as:
+
+```text
+/Volumes/<catalog>/<schema>/<volume>/llama32-local
+```
+
+The notebooks expose `model_root` and task-specific settings as widgets. The
+setup notebook maps the local `.env.default` variables to Databricks paths:
+
+- `PREPARED_DIR=${MODEL_ROOT}/prepared`
+- `RAG_DIR=${MODEL_ROOT}/rag`
+- `CORPUS_DIR=${MODEL_ROOT}/corpus`
+- `MODEL_DIR=${MODEL_ROOT}/model`
+- `TRAIN_FILE=${CORPUS_DIR}/train.jsonl`
+- `LORA_DIR=${MODEL_DIR}/lora`
+
+Notebook order:
+
+1. `00_setup.py` - initialize paths, directories, optional requirements install,
+   and optional Hugging Face token from Databricks secrets.
+2. `01_prepare_text.py` - clean raw text into prepared text, or extract PDFs.
+3. `02_build_rag_index.py` - build the FAISS RAG index.
+4. `03_generate_pretrain_corpus.py` - tokenize and pack continued-pretraining
+   JSONL files.
+5. `04_continued_pretrain.py` - partial continued pretraining.
+6. `05_train_lora.py` - LoRA adapter training.
+7. `06_rag_question.py` - one-question RAG inference or dry-run prompt
+   inspection.
+
+For gated Hugging Face models, create a Databricks secret and pass its scope/key
+to `00_setup`:
+
+```text
+hf_secret_scope=<your-secret-scope>
+hf_secret_key=HF_TOKEN
+```
+
+Cluster dependency guidance:
+
+- Prefer Databricks Runtime ML with GPU for training.
+- Use `databricks/requirements-databricks.txt` only if the cluster is missing
+  project libraries or has stale versions.
+- Do not run the local `install.zsh` on Databricks; it is for workstation
+  CUDA/ROCm/MPS wheel selection.
+
+An optional Databricks Asset Bundle job is defined in `databricks.yml`. Set
+`cluster_id` to an existing GPU cluster and deploy/run it with the Databricks
+CLI if you use bundles.
+
 ## RAG With Prepared Text And gpt-oss
 
 Put cleaned source `.txt` files under `prepared/`, or set `PREPARED_DIR` in `.env`.

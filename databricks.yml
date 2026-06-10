@@ -1,0 +1,58 @@
+bundle:
+  name: llama32-local-databricks
+
+variables:
+  model_root:
+    default: /dbfs/FileStore/llama32-local
+  cluster_id:
+    description: Existing GPU cluster id for training and inference.
+
+resources:
+  jobs:
+    llama32_local_pipeline:
+      name: llama32-local-pipeline
+      tasks:
+        - task_key: setup
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: databricks/notebooks/00_setup
+            base_parameters:
+              model_root: ${var.model_root}
+              install_requirements: "false"
+
+        - task_key: prepare_text
+          depends_on:
+            - task_key: setup
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: databricks/notebooks/01_prepare_text
+            base_parameters:
+              model_root: ${var.model_root}
+              mode: clean_text
+
+        - task_key: build_rag_index
+          depends_on:
+            - task_key: prepare_text
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: databricks/notebooks/02_build_rag_index
+            base_parameters:
+              model_root: ${var.model_root}
+
+        - task_key: generate_pretrain_corpus
+          depends_on:
+            - task_key: prepare_text
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: databricks/notebooks/03_generate_pretrain_corpus
+            base_parameters:
+              model_root: ${var.model_root}
+
+        - task_key: train_lora
+          depends_on:
+            - task_key: generate_pretrain_corpus
+          existing_cluster_id: ${var.cluster_id}
+          notebook_task:
+            notebook_path: databricks/notebooks/05_train_lora
+            base_parameters:
+              model_root: ${var.model_root}
