@@ -15,3 +15,4 @@ src/__pycache__/
 .log
 .env
 hf_token.txt
+.DS_Store
