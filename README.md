@@ -51,6 +51,24 @@ pip install -U pip
 pip install torch transformers datasets peft trl accelerate safetensors
 ```
 
+## Hugging Face TLS / Corporate Proxy Certificates
+
+The runtime configures Hugging Face Hub's `httpx` client to use the system trust
+store through `truststore`. If your network proxy uses a private/self-signed
+root CA, install that CA in the OS trust store or point the project at a PEM
+bundle:
+
+```bash
+export HF_CA_BUNDLE=/path/to/corporate-root-ca.pem
+```
+
+`HF_CA_BUNDLE` takes precedence over `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`,
+and `SSL_CERT_FILE`. As a last-resort debugging option only, set:
+
+```bash
+export HF_HUB_DISABLE_SSL_VERIFY=1
+```
+
 ## 2) Prepare raw text files
 
 Place your source `.txt` files in:

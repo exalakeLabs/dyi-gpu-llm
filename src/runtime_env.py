@@ -51,6 +51,17 @@ def load_dotenv(path: Path = ENV_PATH) -> None:
 
 load_dotenv()
 
+try:
+    from hf_http_compat import (
+        configure_huggingface_http_client,
+        patch_huggingface_http_backoff,
+    )
+
+    configure_huggingface_http_client()
+    patch_huggingface_http_backoff()
+except Exception:
+    pass
+
 
 def env_str(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
