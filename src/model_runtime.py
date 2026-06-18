@@ -34,6 +34,18 @@ GENERATOR_ALLOW_META_OFFLOAD = env_str("GENERATOR_ALLOW_META_OFFLOAD", "0").stri
 }
 GENERATOR_OFFLOAD_DIR = env_str("GENERATOR_OFFLOAD_DIR")
 GENERATOR_ATTN_IMPLEMENTATION = env_str("GENERATOR_ATTN_IMPLEMENTATION")
+GENERATOR_TF32 = env_str("GENERATOR_TF32", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+GENERATOR_COMPILE = env_str("GENERATOR_COMPILE", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 
 # transformers ≥ 4.51 renamed the from_pretrained dtype kwarg from
 # `torch_dtype` to `dtype`; older builds silently ignore `dtype`.
@@ -81,6 +93,28 @@ def _model_dtype() -> torch.dtype:
         except Exception:
             pass
     return torch.float16
+
+
+def configure_accelerator() -> None:
+    if not torch.cuda.is_available():
+        return
+
+    torch.cuda.set_device(0)
+    torch.backends.cuda.matmul.allow_tf32 = GENERATOR_TF32
+    torch.backends.cudnn.allow_tf32 = GENERATOR_TF32
+    torch.set_float32_matmul_precision("high" if GENERATOR_TF32 else "highest")
+
+    if hasattr(torch.backends.cuda, "enable_flash_sdp"):
+        torch.backends.cuda.enable_flash_sdp(True)
+    if hasattr(torch.backends.cuda, "enable_mem_efficient_sdp"):
+        torch.backends.cuda.enable_mem_efficient_sdp(True)
+    if hasattr(torch.backends.cuda, "enable_math_sdp"):
+        torch.backends.cuda.enable_math_sdp(True)
+
+    backend_label = "ROCm/HIP" if torch.version.hip is not None else "CUDA"
+    print(f"Generator accelerator tuning: {backend_label} device 0")
+    if torch.version.hip is None:
+        print(f"Generator TF32: {GENERATOR_TF32}")
 
 
 def _max_memory(gpu_memory: str = GENERATOR_GPU_MEMORY, cpu_memory: str = GENERATOR_CPU_MEMORY):
@@ -227,6 +261,7 @@ def load_tokenizer(base_model: str = BASE_MODEL):
 
 
 def load_base_model(base_model: str = BASE_MODEL, **kwargs):
+    configure_accelerator()
     model_kwargs: dict = {
         _DTYPE_KWARG: _model_dtype(),
         "trust_remote_code": True,
@@ -325,6 +360,9 @@ def load_generation_model(
     model.generation_config.pad_token_id = tokenizer.eos_token_id
     model.generation_config.eos_token_id = tokenizer.eos_token_id
     model.eval()
+    if GENERATOR_COMPILE:
+        print("Generator torch.compile: enabled")
+        model = torch.compile(model, mode="reduce-overhead")
     return tokenizer, model
 
 

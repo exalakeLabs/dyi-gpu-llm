@@ -17,10 +17,14 @@ PRESERVE_RUNTIME_ENV=(
   GENERATOR_CPU_RESERVE_GIB
   GENERATOR_DEVICE_MAP
   GENERATOR_DTYPE
+  GENERATOR_COMPILE
   GENERATOR_GPU_MEMORY
+  GENERATOR_GPU_RESERVE_GIB
   GENERATOR_MODEL
   GENERATOR_MXFP4_DEQUANTIZE
   GENERATOR_OFFLOAD_DIR
+  GENERATOR_TF32
+  GENERATOR_USE_KERNELS
   HSA_OVERRIDE_GFX_VERSION
   LAUNCH_CHAT_DRY_RUN
   LOW_VRAM_CUDA_RUNTIME
@@ -59,6 +63,10 @@ LOW_VRAM_KIND=""
 LOW_VRAM_NAME=""
 LOW_VRAM_TOTAL_MIB=""
 LOW_VRAM_RUNTIME="${LOW_VRAM_RUNTIME:-}"
+HIGH_VRAM_GPU=0
+HIGH_VRAM_KIND=""
+HIGH_VRAM_NAME=""
+HIGH_VRAM_TOTAL_MIB=""
 GPU_VISIBILITY_NOTE=""
 GPU_CAP_WARNING=""
 GENERATOR_RUNTIME_WARNING=""
@@ -115,6 +123,11 @@ if command -v nvidia-smi >/dev/null 2>&1; then
         LOW_VRAM_RUNTIME="cuda"
       fi
     fi
+  elif [[ "$NVIDIA_TOTAL_MIB" == <-> && "$NVIDIA_TOTAL_MIB" -gt 16384 ]]; then
+    HIGH_VRAM_GPU=1
+    HIGH_VRAM_KIND="NVIDIA"
+    HIGH_VRAM_NAME="$NVIDIA_NAME"
+    HIGH_VRAM_TOTAL_MIB="$NVIDIA_TOTAL_MIB"
   fi
 fi
 
@@ -146,9 +159,35 @@ PY
           LOW_VRAM_RUNTIME="${LOW_VRAM_CUDA_RUNTIME:-cuda}"
         fi
       fi
+    elif [[ "$TORCH_GPU_TOTAL_MIB" == <-> && "$TORCH_GPU_TOTAL_MIB" -gt 16384 ]]; then
+      HIGH_VRAM_GPU=1
+      HIGH_VRAM_KIND="$TORCH_GPU_KIND"
+      HIGH_VRAM_NAME="$TORCH_GPU_NAME"
+      HIGH_VRAM_TOTAL_MIB="$TORCH_GPU_TOTAL_MIB"
     fi
   fi
 fi
+
+detect_high_vram_gpu_cap() {
+  local total_mib total_gib reserve_gib cap_gib
+
+  total_mib="$1"
+  if [[ ! "$total_mib" == <-> ]]; then
+    print ""
+    return
+  fi
+
+  total_gib=$(( total_mib / 1024 ))
+  reserve_gib="${GENERATOR_GPU_RESERVE_GIB:-4}"
+  if [[ ! "$reserve_gib" == <-> ]]; then
+    reserve_gib=4
+  fi
+  cap_gib=$(( total_gib - reserve_gib ))
+  if (( cap_gib < 8 )); then
+    cap_gib=8
+  fi
+  print "${cap_gib}GiB"
+}
 
 EMBED_DEVICE="${RAG_EMBED_DEVICE:-cpu}"
 if (( LOW_VRAM_GPU )); then
@@ -228,8 +267,15 @@ if (( LOW_VRAM_GPU )); then
     CONTEXT_CHARS="$CONTEXT_CHAR_LIMIT"
   fi
 else
-  GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
-  GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-5GiB}"
+  if (( HIGH_VRAM_GPU )) && [[ "$HIGH_VRAM_KIND" == "NVIDIA" || "$HIGH_VRAM_KIND" == "CUDA" ]]; then
+    GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-single}"
+    GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-}"
+    REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-cuda}"
+    GPU_VISIBILITY_NOTE="high-VRAM CUDA profile: generator defaults to a single A100-class GPU with no 5GiB placement cap"
+  else
+    GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
+    GEN_GPU_MEMORY="${GENERATOR_GPU_MEMORY:-$(detect_high_vram_gpu_cap "$HIGH_VRAM_TOTAL_MIB")}"
+  fi
   GEN_CPU_MEMORY="${GENERATOR_CPU_MEMORY:-$DEFAULT_GEN_CPU_MEMORY}"
   RETRIEVE_TOP_K="${RETRIEVE_K:-24}"
   NEW_TOKENS="${MAX_NEW_TOKENS:-500}"
@@ -238,6 +284,7 @@ else
 fi
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-$GEN_MXFP4_DEQUANTIZE}"
 GEN_DTYPE="${GENERATOR_DTYPE:-auto}"
+GEN_USE_KERNELS="${GENERATOR_USE_KERNELS:-0}"
 GEN_OFFLOAD_DIR="${GENERATOR_OFFLOAD_DIR:-${TMPDIR:-/tmp}/llama32-generator-offload}"
 CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-${PYTORCH_ALLOC_CONF:-expandable_segments:True,max_split_size_mb:128}}"
 
@@ -267,6 +314,10 @@ if (( LOW_VRAM_GPU )) && [[ "$LOW_VRAM_KIND" == "ROCm" && "${LOW_VRAM_RUNTIME:l}
   print -u2 "Set GENERATOR_MODEL and BASE_MODEL to a smaller Hugging Face model, for example:"
   print -u2 "  GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct BASE_MODEL=Qwen/Qwen2.5-3B-Instruct ./launch_chat.zsh"
   exit 2
+fi
+
+if (( HIGH_VRAM_GPU )) && [[ "$HIGH_VRAM_KIND" == "NVIDIA" || "$HIGH_VRAM_KIND" == "CUDA" ]] && [[ "${GENERATOR:l}" == *gpt-oss* ]]; then
+  GEN_USE_KERNELS="${GENERATOR_USE_KERNELS:-1}"
 fi
 
 if (( LOW_VRAM_GPU )) && [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
@@ -303,6 +354,7 @@ export GENERATOR_DTYPE="$GEN_DTYPE"
 export GENERATOR_MXFP4_DEQUANTIZE="$GEN_MXFP4_DEQUANTIZE"
 export GENERATOR_OFFLOAD_DIR="$GEN_OFFLOAD_DIR"
 export GENERATOR_ATTN_IMPLEMENTATION="$GEN_ATTN"
+export GENERATOR_USE_KERNELS="$GEN_USE_KERNELS"
 export CHAT_REQUIRE_ACCELERATOR="$REQUIRE_ACCELERATOR"
 export PYTORCH_CUDA_ALLOC_CONF="$CUDA_ALLOC_CONF"
 export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-$PYTORCH_CUDA_ALLOC_CONF}"
@@ -319,6 +371,12 @@ if (( LOW_VRAM_GPU )); then
     print "Low-VRAM $LOW_VRAM_KIND profile: enabled (${LOW_VRAM_TOTAL_MIB} MiB detected)"
   fi
   print "Low-VRAM runtime: $LOW_VRAM_RUNTIME"
+elif (( HIGH_VRAM_GPU )); then
+  if [[ -n "$HIGH_VRAM_NAME" ]]; then
+    print "High-VRAM $HIGH_VRAM_KIND profile: enabled ($HIGH_VRAM_NAME, ${HIGH_VRAM_TOTAL_MIB} MiB detected)"
+  else
+    print "High-VRAM $HIGH_VRAM_KIND profile: enabled (${HIGH_VRAM_TOTAL_MIB} MiB detected)"
+  fi
 fi
 print "Generator device_map: $GENERATOR_DEVICE_MAP"
 print "Generator GPU memory cap: ${GENERATOR_GPU_MEMORY:-<none>}"
@@ -331,6 +389,7 @@ if [[ -n "$HOST_RAM_GIB" && "$GEN_CPU_MEMORY_OVERRIDDEN" == "0" ]]; then
 fi
 print "Generator dtype: $GENERATOR_DTYPE"
 print "Generator MXFP4 dequantize: $GENERATOR_MXFP4_DEQUANTIZE"
+print "Generator kernels: $GENERATOR_USE_KERNELS"
 print "Required accelerator: ${CHAT_REQUIRE_ACCELERATOR:-<none>}"
 if [[ -n "$GENERATOR_RUNTIME_WARNING" ]]; then
   print "warning: $GENERATOR_RUNTIME_WARNING"
