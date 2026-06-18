@@ -1,254 +1,229 @@
-# Training And RAG Guide
+# llama32-local
 
-This repository is set up to run RAG/runtime generation through a local
-Transformers generator, while keeping BGE models for embedding and reranking.
-The current low-VRAM GPU default is **Qwen/Qwen2.5-3B-Instruct**.
+Local data preparation, RAG indexing, LoRA training, and chat/inference tooling
+for Hugging Face causal language models.
 
-## RAG With Prepared Text And gpt-oss
+The project is split into functional modules so each workflow can run
+independently:
 
-Put cleaned source `.txt` files under `prepared/`, or set `PREPARED_DIR` in `.env`.
-Then build the FAISS index:
-
-```bash
-./build_rag_index.zsh
+```text
+project-root/
+  install.zsh
+  .env.example
+  data_prep/      # downloads, cleanup, corpus creation, training-pair generation
+  rag/            # chunking, embedding, FAISS index creation, index metadata
+  training/       # LoRA/SFT and continued-pretraining entrypoints
+  inference/      # base, adapter, RAG, and adapter+RAG chat/inference
+  utils/          # shared env/http helpers plus PDF/OCR/text conversion utilities
+  scripts/        # guided orchestration
+  src/            # compatibility wrappers for old src/... commands
 ```
 
-That writes:
+The old `src/*.py` entrypoints remain as thin wrappers, so existing commands and
+notebooks can keep working while new workflows use the module folders directly.
 
-- `rag/index.faiss`
-- `rag/chunks.jsonl`
-- `rag/index_config.json`
+## Configuration
 
-Ask gpt-oss questions through the index:
-
-```bash
-python3 src/teach_gpt_oss_rag.py --question "What does the prepared material say about this topic?"
-```
-
-The script defaults to `openai/gpt-oss-20b`. Override it with:
+Copy the example env and edit paths/models:
 
 ```bash
-python3 src/teach_gpt_oss_rag.py --model openai/gpt-oss-120b
+cp .env.example .env
 ```
 
-To inspect the exact instruction prompt and retrieved passages without loading
-the model:
+Existing environment variable names are preserved. Important model variables:
 
 ```bash
-python3 src/teach_gpt_oss_rag.py --dry-run --question "What should I know?"
-python3 src/teach_gpt_oss_rag.py --print-teaching-prompt
+EMBED_MODEL=BAAI/bge-base-en-v1.5
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+GENERATOR_MODEL=openai/gpt-oss-20b
+BASE_MODEL=${GENERATOR_MODEL}
 ```
 
-This does not fine-tune gpt-oss. It "teaches" the model at inference time by
-retrieving relevant passages and wrapping them in strict grounding instructions.
+Keep `EMBED_MODEL` and `RERANKER_MODEL` on embedding/reranking models. Do not
+point them at `gpt-oss`; use `GENERATOR_MODEL` / `BASE_MODEL` for the chat
+model.
 
-## 1) Install dependencies
+## Install
+
+Use the existing installer; its behavior is unchanged:
+
+```bash
+./install.zsh
+```
+
+If you install manually:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -U pip
-pip install torch transformers datasets peft trl accelerate safetensors
+pip install -r requirements.txt
 ```
 
-## Hugging Face TLS / Corporate Proxy Certificates
+## Data Preparation
 
-The runtime configures Hugging Face Hub's `httpx` client to use the system trust
-store through `truststore`. If your network proxy uses a private/self-signed
-root CA, install that CA in the OS trust store or point the project at a PEM
-bundle:
+Download raw source text:
 
 ```bash
-export HF_CA_BUNDLE=/path/to/corporate-root-ca.pem
+./get_raw_text.zsh --jobs 8
 ```
 
-`HF_CA_BUNDLE` takes precedence over `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`,
-and `SSL_CERT_FILE`. As a last-resort debugging option only, set:
+Clean raw text into the prepared directory:
 
 ```bash
-export HF_HUB_DISABLE_SSL_VERIFY=1
+python3 data_prep/clean_text.py --input-dir "$RAWTEXT_DIR" --output-dir "$PREPARED_DIR"
 ```
 
-## 2) Prepare raw text files
-
-Place your source `.txt` files in:
-
-- `prepared/`
-
-If your source is PDF files, run the PDF helpers first (`src/extract_pdfs.py`, then optional cleaning).
-
-## 3) Run the training pipeline
-
-Build `data/train.jsonl` from `prepared/*.txt` and train the LoRA adapter:
+Generate packed token corpora for continued pretraining:
 
 ```bash
-python src/train_pipeline.py
+python3 data_prep/generate_pretrain_corpus.py \
+  --text_dir "$PREPARED_DIR" \
+  --corpus_dir "$CORPUS_DIR" \
+  --num_proc 1
 ```
 
-The pipeline writes one JSON object per line with a `text` field, then starts LoRA training.
-
-If you only need to rebuild the dataset:
+Create instruction/training pairs when that workflow is needed:
 
 ```bash
-python src/make_text_dataset.py
+python3 data_prep/make_training_pairs.py
 ```
 
-If you already have `data/train.jsonl` and only need to train:
+Utility helpers live in `utils/`, for example:
 
 ```bash
-python src/train_lora_gpu.py
+python3 utils/extract_pdfs.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
+python3 utils/pdf_to_txt.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
 ```
 
-Default training settings come from `.env.default`:
+## RAG Index Building
 
-- Base model: `Qwen/Qwen2.5-3B-Instruct`
-- Data file: `${CORPUS_DIR}/train.jsonl`
-- Output dir: `${MODEL_DIR}/output_partial`
-- LoRA targets: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`
-- Batch size: `1` (with grad accumulation `8`)
-- Epochs: `1`
-
-Final adapter output is saved at:
-
-- `${ADAPTER_DIR}`
-
-## Continued Pretraining
-
-The partial continued-pretraining path is split into two stages. First build the
-packed token corpus from `prepared/`:
-
-```bash
-python3 src/generate_pretrain_corpus.py --text_dir prepared --corpus_dir corpus --num_proc 1
-```
-
-Then train from the token JSONL files in `corpus/`:
-
-```bash
-python3 src/continued_pretrain_partial.py --corpus_dir corpus --eval_prompts eval_prompts.txt
-```
-
-The corpus generator writes `corpus/train.jsonl` and `corpus/eval.jsonl`, with
-each row containing fixed-length `input_ids` and matching `labels`.
-
-## 4) Test the tuned model
-
-```bash
-python src/test_tuned.py
-```
-
-## 5) Optional: serve locally
-
-```bash
-uvicorn --app-dir src serve_tuned:app --host 127.0.0.1 --port 8000
-```
-
-Serving and chat entrypoints share the runtime model loader in `src/model_runtime.py`.
-
-## Chat Runtime
-
-The default runtime model settings live in `.env.default`:
-
-```bash
-EMBED_MODEL=BAAI/bge-base-en-v1.5
-RERANKER_MODEL=BAAI/bge-reranker-v2-m3
-GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct
-BASE_MODEL=Qwen/Qwen2.5-3B-Instruct
-```
-
-`EMBED_MODEL` and `RERANKER_MODEL` must stay on embedding/reranking models.
-Do not point them at gpt-oss; that will try to load the generator as an
-embedder and can exhaust GPU memory during index builds.
-
-Build the RAG index with the embedding model, then launch chat with
-Transformers:
+Build a FAISS RAG index independently of any LoRA training:
 
 ```bash
 ./build_rag_index.zsh
+```
+
+Equivalent module entrypoint:
+
+```bash
+python3 rag/index_builder.py \
+  --input-dir "$PREPARED_DIR" \
+  --output-dir "$RAG_DIR" \
+  --embed-model "$EMBED_MODEL"
+```
+
+The index builder writes:
+
+- `index.faiss`
+- `chunks.jsonl`
+- `index_config.json`
+
+The chat runtime reads `index_config.json` and uses the recorded embedding model
+when it differs from the current environment.
+
+## LoRA Training
+
+Run the existing GPU/CPU-selecting training pipeline:
+
+```bash
+./run_train_pipeline.zsh
+```
+
+Or call the module directly:
+
+```bash
+python3 training/train_pipeline.py
+```
+
+Run a specific trainer:
+
+```bash
+python3 training/train_lora_gpu.py
+python3 training/train_lora_cpu.py
+```
+
+Continued pretraining remains a separate workflow:
+
+```bash
+./run_continued_pretrain.zsh --corpus_dir "$CORPUS_DIR"
+```
+
+LoRA training consumes prepared datasets from `data_prep/`; it does not require
+a RAG index.
+
+## Chat And Inference
+
+The main chat entrypoint supports all runtime combinations:
+
+```bash
+# Base model only
+python3 inference/chat_rag.py --no-rag --no-adapter
+
+# Base model + LoRA adapter
+python3 inference/chat_rag.py --no-rag
+
+# Base model + RAG
+python3 inference/chat_rag.py --no-adapter
+
+# Base model + LoRA adapter + RAG
+python3 inference/chat_rag.py
+```
+
+The top-level launcher still works and applies GPU/runtime defaults:
+
+```bash
 ./launch_chat.zsh
 ```
 
-On low-VRAM NVIDIA cards such as a 12 GB RTX 5070, the launcher keeps CUDA
-visible and uses native MXFP4 with a conservative GPU memory cap. The BGE
-embedder stays on CPU by default so the generator gets the VRAM:
+For gpt-oss teaching-style RAG inspection:
 
 ```bash
-RAG_EMBED_DEVICE=cpu
-GENERATOR_DEVICE_MAP=auto
-GENERATOR_GPU_MEMORY=4GiB
-GENERATOR_MXFP4_DEQUANTIZE=0
-MAX_CONTEXT_CHARS=2048
-MAX_NEW_TOKENS=96
+python3 inference/teach_gpt_oss_rag.py --question "What does the prepared material say?"
+python3 inference/teach_gpt_oss_rag.py --dry-run --question "What should I know?"
+python3 inference/teach_gpt_oss_rag.py --print-teaching-prompt
 ```
 
-This keeps the GPU visible, but it does not guarantee that
-`openai/gpt-oss-20b` can run through Transformers on a 12 GB card. The model's
-native MXFP4 path is a roughly 16 GB memory target. If `device_map=auto` leaves
-some tensors on `meta` / disk offload, this Transformers MXFP4 path can fail at
-generation time with `Tensor on device meta is not on the expected device
-cuda:0`. The chat runtime now detects that state immediately and exits with a
-specific error instead of waiting for the first prompt to crash.
+## Guided Pipeline
 
-Avoid large caps such as `8GiB` on a 12 GB card: MXFP4 conversion and attention
-kernels need temporary VRAM above the placed model weights. If CUDA reports
-`device not ready` during loading or generation, reboot the host to reset the
-driver, then retry the conservative cap:
+Use the guided orchestrator to choose which stages to run:
 
 ```bash
-GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh
+python3 scripts/run_pipeline.py
 ```
 
-If the runtime reports meta/offloaded tensors, lowering the GPU cap further will
-not fix that path; it increases offload. Use a smaller Hugging Face generator, a
-GPU with more VRAM, or a runtime that supports gpt-oss CPU/GPU split execution.
-For debugging only, bypass the guard with:
+Preview selected commands without running them:
 
 ```bash
-GENERATOR_ALLOW_META_OFFLOAD=1 ./launch_chat.zsh
+python3 scripts/run_pipeline.py --dry-run
 ```
 
-On 8 GB Radeon cards such as the RX 7600, the launcher now defaults ROCm to the
-GPU instead of CPU fallback. PyTorch exposes ROCm devices as `cuda:*`, so the
-runtime requires the generator to land on `cuda:0` when ROCm mode is selected.
-Use a smaller Hugging Face generator that fits the card, for example:
+The orchestrator only coordinates. It calls `get_raw_text.zsh`,
+`build_rag_index.zsh`, `training/train_pipeline.py`, and
+`inference/chat_rag.py` rather than duplicating their implementation logic.
+
+## GPU Runtime Notes
+
+On high-VRAM NVIDIA GPUs such as an A100, `launch_chat.zsh` defaults to a
+single-GPU generator placement and avoids the old 5 GiB memory cap. On low-VRAM
+NVIDIA/ROCm cards, it keeps conservative defaults and prints the selected
+device map, memory cap, dtype, and attention settings.
+
+Useful overrides:
 
 ```bash
-GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct
-BASE_MODEL=Qwen/Qwen2.5-3B-Instruct
-GENERATOR_DEVICE_MAP=single
-GENERATOR_GPU_MEMORY=7GiB
-RAG_EMBED_DEVICE=cpu
+GENERATOR_DEVICE_MAP=auto ./launch_chat.zsh
+GENERATOR_GPU_MEMORY=36GiB ./launch_chat.zsh
+GENERATOR_COMPILE=1 ./launch_chat.zsh
+RAG_EMBED_DEVICE=cuda ./launch_chat.zsh
 ```
 
-The RAG embedder stays on CPU by default to preserve the RX 7600's 8 GB VRAM
-for generation. Move it to ROCm only if the selected generator leaves enough
-headroom:
+## Compatibility Notes
 
-```bash
-RAG_EMBED_DEVICE=rocm ./launch_chat.zsh
-```
-
-`openai/gpt-oss-20b` is not a workable RX 7600 chat model in this Transformers
-path. The launcher fails fast for that combination instead of falling back to
-CPU. To explicitly force the old CPU behavior:
-
-```bash
-LOW_VRAM_ROCM_RUNTIME=cpu ./launch_chat.zsh
-```
-
-By default, `GENERATOR_CPU_MEMORY` is computed from host RAM and reserves 8 GiB
-for the OS and other processes. On a 32 GB server, Linux usually reports about
-31 GiB usable RAM, so the cap is about `23GiB`. Override it only when you know
-the machine has more headroom:
-
-```bash
-GENERATOR_CPU_MEMORY=24GiB ./launch_chat.zsh
-```
-
-Increase `GENERATOR_GPU_MEMORY` only if there is free VRAM after the model
-loads.
-
-## Practical tuning tips
-
-- If you hit GPU memory errors, reduce `max_length` or increase gradient accumulation while keeping per-device batch size small.
-- For better quality, run more epochs and/or increase dataset diversity.
-- If your data is instruction/response formatted, adapt preprocessing to produce chat-style examples instead of plain `text` chunks.
+- `install.zsh`, `.runtime`, and `.env` loading behavior are preserved.
+- `src/*.py` files are compatibility wrappers around the new modules.
+- Existing environment variable names remain valid.
+- RAG indexes are reusable as long as the embedding model matches the index
+  metadata.
+- LoRA adapters are reusable only with the same base model they were trained
+  against.

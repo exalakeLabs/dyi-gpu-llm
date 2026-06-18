@@ -29,7 +29,7 @@ case "${RERANK:l}" in
     ;;
 esac
 
-"$PYTHON_BIN" ./src/index_builder.py \
+"$PYTHON_BIN" ./rag/index_builder.py \
   --input-dir "$INPUT_DIR" \
   --output-dir "$OUTPUT_DIR" \
   --embed-model "$EMBED" \

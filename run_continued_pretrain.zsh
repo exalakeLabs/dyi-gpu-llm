@@ -68,7 +68,7 @@ echo "  PYTORCH_ALLOC_CONF=$PYTORCH_ALLOC_CONF"
 echo "  PYTORCH_CUDA_ALLOC_CONF=$PYTORCH_CUDA_ALLOC_CONF"
 echo "  injected args: ${eval_prompt_args[*]} ${rocm_safe_args[*]}"
 
-exec "$PYTHON" "$ROOT/src/continued_pretrain_partial.py" \
+exec "$PYTHON" "$ROOT/training/continued_pretrain_partial.py" \
   "${eval_prompt_args[@]}" \
   "${rocm_safe_args[@]}" \
   "$@"

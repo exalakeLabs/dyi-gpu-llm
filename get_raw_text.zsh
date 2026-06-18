@@ -103,8 +103,8 @@ if ! "$PYTHON" - <<'PY'
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path.cwd() / "src"))
-import http_client
+sys.path.insert(0, str(Path.cwd()))
+import utils.http_client
 PY
 then
   print -u2 "error: selected Python cannot import the raw-text downloader helpers: $PYTHON"
@@ -270,7 +270,7 @@ download_gutenberg() {
 
     cmd=(
       "$PYTHON"
-      "$ROOT/src/download_gutenberg.py"
+      "$ROOT/data_prep/download_gutenberg.py"
       --query "$query"
       --max-books "$max_books"
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
@@ -294,7 +294,7 @@ download_wikipedia() {
   for title in "${WIKIPEDIA_TITLES[@]}"; do
     run_cmd_async \
       "$PYTHON" \
-      "$ROOT/src/download_web_text.py" \
+      "$ROOT/data_prep/download_web_text.py" \
       --wikipedia-title "$title" \
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
   done
@@ -323,7 +323,7 @@ download_wikipedia() {
 
     cmd=(
       "$PYTHON"
-      "$ROOT/src/download_web_text.py"
+      "$ROOT/data_prep/download_web_text.py"
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
       --crawl-depth "$WIKI_CRAWL_DEPTH"
       --crawl-max-pages "$WIKI_CRAWL_MAX_PAGES"
@@ -350,7 +350,7 @@ download_html() {
   for url in "${HTML_URLS[@]}"; do
     run_cmd_async \
       "$PYTHON" \
-      "$ROOT/src/download_web_text.py" \
+      "$ROOT/data_prep/download_web_text.py" \
       --url "$url" \
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
   done

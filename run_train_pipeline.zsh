@@ -2,6 +2,6 @@
 set -euo pipefail
 
 ROOT="${0:A:h}"
-cd "$ROOT/src" || exit 1
+cd "$ROOT" || exit 1
 
-exec "${PYTHON:-python3}" train_pipeline.py "$@"
+exec "${PYTHON:-python3}" training/train_pipeline.py "$@"
