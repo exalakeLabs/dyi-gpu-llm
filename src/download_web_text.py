@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from html import unescape
 from html.parser import HTMLParser
@@ -317,7 +318,13 @@ def write_document(
         return None
 
     header = f"Title: {title}\nSource: {source_url}\n\n"
-    path.write_text(header + text.strip() + "\n", encoding="utf-8", errors="ignore")
+    tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(header + text.strip() + "\n", encoding="utf-8", errors="ignore")
+    if path.exists() and not overwrite:
+        tmp_path.unlink(missing_ok=True)
+        print(f"[exists] {path.name}")
+        return None
+    tmp_path.replace(path)
     print(f"[download] {path.name}")
     return path
 

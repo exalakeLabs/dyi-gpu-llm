@@ -8,6 +8,7 @@ RAW_TEXT_OUTPUT_DIR="${RAWTEXT_DIR:-}"
 RUN_GUTENBERG=1
 RUN_WIKIPEDIA=1
 RUN_HTML=0
+RAW_TEXT_JOBS="${RAW_TEXT_JOBS:-4}"
 WIKI_CRAWL_DEPTH="${WIKI_CRAWL_DEPTH:-1}"
 WIKI_CRAWL_MAX_PAGES="${WIKI_CRAWL_MAX_PAGES:-240}"
 WIKI_CRAWL_LINKS_PER_PAGE="${WIKI_CRAWL_LINKS_PER_PAGE:-35}"
@@ -21,6 +22,7 @@ Options:
   --skip-gutenberg      Do not download Project Gutenberg books.
   --skip-wikipedia      Do not download Wikipedia plaintext pages.
   --run-html            Download and convert URLs listed in HTML_URLS.
+  --jobs N              Run up to N downloader commands in parallel (default: RAW_TEXT_JOBS or 4).
   --wiki-crawl-depth N  Wikipedia link depth from each seed page (default: 1).
   --wiki-crawl-max N    Max crawled Wikipedia pages per topic crawl (default: 240).
   --wiki-crawl-links N  Max linked pages enqueued per crawled page (default: 35).
@@ -28,6 +30,7 @@ Options:
 
 Environment:
   RAWTEXT_DIR           Default output directory, usually set by .env/.runtime.
+  RAW_TEXT_JOBS         Default parallel downloader command count.
   PYTHON                Python executable to use after .runtime is loaded.
 EOF
 }
@@ -49,6 +52,10 @@ while [[ $# -gt 0 ]]; do
     --run-html)
       RUN_HTML=1
       shift
+      ;;
+    --jobs)
+      RAW_TEXT_JOBS="${2:?missing value for --jobs}"
+      shift 2
       ;;
     --wiki-crawl-depth)
       WIKI_CRAWL_DEPTH="${2:?missing value for --wiki-crawl-depth}"
@@ -82,6 +89,15 @@ fi
 
 PYTHON="${PYTHON:-python}"
 RAW_TEXT_OUTPUT_DIR="${RAW_TEXT_OUTPUT_DIR:-${RAWTEXT_DIR:-text}}"
+
+if [[ ! "$RAW_TEXT_JOBS" == <-> ]]; then
+  print -u2 "error: --jobs / RAW_TEXT_JOBS must be a positive integer"
+  exit 2
+fi
+if (( RAW_TEXT_JOBS < 1 )); then
+  print -u2 "error: --jobs / RAW_TEXT_JOBS must be a positive integer"
+  exit 2
+fi
 
 if ! "$PYTHON" - <<'PY'
 from pathlib import Path
@@ -204,10 +220,42 @@ HTML_URLS=(
   "https://en.wikipedia.org/wiki/Natural_language_processing"
 )
 
+typeset -i ACTIVE_JOBS=0
+typeset -i JOB_FAILED=0
+typeset -a JOB_PIDS=()
+
 run_cmd() {
   print
   print "==> $*"
   "$@"
+}
+
+run_cmd_async() {
+  print
+  print "==> $*"
+  "$@" &
+  JOB_PIDS+=("$!")
+  ACTIVE_JOBS="${#JOB_PIDS[@]}"
+  if (( ACTIVE_JOBS >= RAW_TEXT_JOBS )); then
+    wait_for_all
+  fi
+}
+
+wait_for_all() {
+  local pid
+
+  for pid in "${JOB_PIDS[@]}"; do
+    if ! wait "$pid"; then
+      JOB_FAILED=1
+    fi
+  done
+  JOB_PIDS=()
+  ACTIVE_JOBS=0
+
+  if (( JOB_FAILED )); then
+    print -u2 "error: one or more downloader jobs failed"
+    exit 1
+  fi
 }
 
 download_gutenberg() {
@@ -232,8 +280,10 @@ download_gutenberg() {
       cmd+=(--topic "$topic")
     fi
 
-    run_cmd "${cmd[@]}"
+    run_cmd_async "${cmd[@]}"
   done
+
+  wait_for_all
 }
 
 download_wikipedia() {
@@ -242,12 +292,14 @@ download_wikipedia() {
   local -a cmd seeds terms
 
   for title in "${WIKIPEDIA_TITLES[@]}"; do
-    run_cmd \
+    run_cmd_async \
       "$PYTHON" \
       "$ROOT/src/download_web_text.py" \
       --wikipedia-title "$title" \
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
   done
+
+  wait_for_all
 
   for group in "${WIKIPEDIA_CRAWL_SEEDS[@]}"; do
     label="${group%%|*}"
@@ -286,26 +338,31 @@ download_wikipedia() {
       cmd+=(--crawl-include "$term")
     done
 
-    run_cmd "${cmd[@]}"
+    run_cmd_async "${cmd[@]}"
   done
+
+  wait_for_all
 }
 
 download_html() {
   local url
 
   for url in "${HTML_URLS[@]}"; do
-    run_cmd \
+    run_cmd_async \
       "$PYTHON" \
       "$ROOT/src/download_web_text.py" \
       --url "$url" \
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
   done
+
+  wait_for_all
 }
 
 mkdir -p "$RAW_TEXT_OUTPUT_DIR"
 
 print "Raw text output: $RAW_TEXT_OUTPUT_DIR"
 print "Python: $PYTHON"
+print "Parallel downloader jobs: $RAW_TEXT_JOBS"
 print "Wikipedia crawl: depth=$WIKI_CRAWL_DEPTH max_pages=$WIKI_CRAWL_MAX_PAGES links_per_page=$WIKI_CRAWL_LINKS_PER_PAGE"
 
 if (( RUN_GUTENBERG )); then

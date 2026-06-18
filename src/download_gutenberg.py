@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import os
 import re
 from pathlib import Path
 from typing import Optional
@@ -103,7 +104,16 @@ def main():
 
         print(f"[download] #{book_id} {title} | {authors}")
         r = get(url, timeout=120)
-        path.write_text(r.text, encoding="utf-8", errors="ignore")
+        if path.exists():
+            print(f"[exists] {path.name}")
+            continue
+        tmp_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp_path.write_text(r.text, encoding="utf-8", errors="ignore")
+        if path.exists():
+            tmp_path.unlink(missing_ok=True)
+            print(f"[exists] {path.name}")
+            continue
+        tmp_path.replace(path)
         count += 1
 
     print(f"\nDone. Downloaded {count} books, skipped {skipped}.")
