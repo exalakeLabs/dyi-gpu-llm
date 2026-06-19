@@ -474,7 +474,7 @@ def main():
     batch_meta: List[Dict[str, Any]] = []
     all_embeddings = []
 
-    for file_path in tqdm(files, desc="Reading books"):
+    for file_path in tqdm(files, desc="Processing corpus"):
         try:
             raw_text = file_path.read_text(encoding="utf-8", errors="ignore")
         except Exception as e:
