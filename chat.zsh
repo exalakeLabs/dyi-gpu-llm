@@ -49,7 +49,7 @@ for name in "${PRESERVE_RUNTIME_ENV[@]}"; do
 done
 
 if [[ -f "$ROOT/.runtime" ]]; then
-  source "$ROOT/.runtime" >/dev/null
+  source "$ROOT/.runtime" >/dev/null 2>/dev/null || true
 fi
 for name value in "${(@kv)RUNTIME_ENV_OVERRIDES}"; do
   export "$name=$value"
@@ -312,7 +312,7 @@ fi
 if (( LOW_VRAM_GPU )) && [[ "$LOW_VRAM_KIND" == "ROCm" && "${LOW_VRAM_RUNTIME:l}" == "rocm" && "${GENERATOR:l}" == *gpt-oss* ]]; then
   print -u2 "error: $GENERATOR is not a workable Radeon RX 7600 chat model in this Transformers path."
   print -u2 "Set GENERATOR_MODEL and BASE_MODEL to a smaller Hugging Face model, for example:"
-  print -u2 "  GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct BASE_MODEL=Qwen/Qwen2.5-3B-Instruct ./launch_chat.zsh"
+  print -u2 "  GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct BASE_MODEL=Qwen/Qwen2.5-3B-Instruct ./chat.zsh"
   exit 2
 fi
 
@@ -403,20 +403,20 @@ if [[ -n "$GPU_VISIBILITY_NOTE" ]]; then
   print "GPU visibility note: $GPU_VISIBILITY_NOTE"
   if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
     if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
-      print "ROCm generator opt-in: LOW_VRAM_ROCM_RUNTIME=rocm ./launch_chat.zsh"
-      print "ROCm full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
+      print "ROCm generator opt-in: LOW_VRAM_ROCM_RUNTIME=rocm ./chat.zsh"
+      print "ROCm full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./chat.zsh"
     else
-      print "ROCm CPU fallback: LOW_VRAM_ROCM_RUNTIME=cpu ./launch_chat.zsh"
-      print "ROCm embedder opt-in: RAG_EMBED_DEVICE=rocm ./launch_chat.zsh"
+      print "ROCm CPU fallback: LOW_VRAM_ROCM_RUNTIME=cpu ./chat.zsh"
+      print "ROCm embedder opt-in: RAG_EMBED_DEVICE=rocm ./chat.zsh"
     fi
   else
     if [[ "${LOW_VRAM_RUNTIME:l}" == "cpu" ]]; then
-      print "CUDA generator opt-in: LOW_VRAM_CUDA_RUNTIME=cuda ./launch_chat.zsh"
-      print "CUDA full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
+      print "CUDA generator opt-in: LOW_VRAM_CUDA_RUNTIME=cuda ./chat.zsh"
+      print "CUDA full CPU isolation: LOW_VRAM_HIDE_GPU=1 ./chat.zsh"
     else
-      print "CUDA CPU fallback: LOW_VRAM_CUDA_RUNTIME=cpu LOW_VRAM_HIDE_GPU=1 ./launch_chat.zsh"
-      print "CUDA lower VRAM cap: GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh"
-      print "CUDA diagnostic mode: CUDA_LAUNCH_BLOCKING=1 GENERATOR_GPU_MEMORY=4GiB ./launch_chat.zsh"
+      print "CUDA CPU fallback: LOW_VRAM_CUDA_RUNTIME=cpu LOW_VRAM_HIDE_GPU=1 ./chat.zsh"
+      print "CUDA lower VRAM cap: GENERATOR_GPU_MEMORY=4GiB ./chat.zsh"
+      print "CUDA diagnostic mode: CUDA_LAUNCH_BLOCKING=1 GENERATOR_GPU_MEMORY=4GiB ./chat.zsh"
     fi
   fi
 fi

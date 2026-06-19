@@ -72,10 +72,10 @@ def main() -> int:
 
     if ask_yes_no("Prepare/download raw data?", default=False):
         jobs = input("Parallel download jobs [4]: ").strip() or "4"
-        steps.append([str(ROOT / "get_raw_text.zsh"), "--jobs", jobs])
+        steps.append([str(ROOT / "pipeline.zsh"), "corpus", "--jobs", jobs])
 
     if ask_yes_no("Build a RAG index?", default=False):
-        steps.append([str(ROOT / "build_rag_index.zsh")])
+        steps.append([str(ROOT / "pipeline.zsh"), "rag"])
 
     if ask_yes_no("Run LoRA training?", default=False):
         steps.append([py, str(ROOT / "training" / "train_pipeline.py")])

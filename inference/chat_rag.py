@@ -123,8 +123,8 @@ def resolve_embed_device(device: str) -> str:
             raise SystemExit(
                 f"Embedding device {requested!r} was requested, but no CUDA/ROCm GPU is visible.\n"
                 f"torch={torch.__version__}, torch.version.cuda={torch.version.cuda}, torch.version.hip={torch.version.hip}\n"
-                "If launch_chat.zsh printed 'CUDA visible devices: <none>', the GPU was hidden from Python. "
-                "Unset LOW_VRAM_HIDE_GPU or use LOW_VRAM_ROCM_RUNTIME=rocm RAG_EMBED_DEVICE=rocm ./launch_chat.zsh."
+                "If chat.zsh printed 'CUDA visible devices: <none>', the GPU was hidden from Python. "
+                "Unset LOW_VRAM_HIDE_GPU or use LOW_VRAM_ROCM_RUNTIME=rocm RAG_EMBED_DEVICE=rocm ./chat.zsh."
             )
         if requested.startswith(("rocm", "hip")) and torch.version.hip is None:
             raise SystemExit(
@@ -411,7 +411,7 @@ def validate_embed_dimension(index, embedder, embed_model: str) -> None:
                     "RAG index and embedder dimensions do not match.",
                     f"Index dimension: {index_dim}",
                     f"Embedder dimension for {embed_model}: {embed_dim}",
-                    "Rebuild the RAG index with ./build_rag_index.zsh, or use the embedder recorded in index_config.json.",
+                    "Rebuild the RAG index with ./pipeline.zsh rag, or use the embedder recorded in index_config.json.",
                 ]
             )
         )

@@ -231,7 +231,7 @@ def main() -> int:
     index_path = index_dir / "index.faiss"
     if not chunks_path.exists() or not index_path.exists():
         raise SystemExit(
-            f"Missing RAG index files in {index_dir}. Run ./build_rag_index.zsh first."
+            f"Missing RAG index files in {index_dir}. Run ./pipeline.zsh rag first."
         )
 
     embed_model = resolve_embed_model(index_dir, args.embed_model)

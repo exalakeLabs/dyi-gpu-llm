@@ -62,31 +62,20 @@ pip install -r requirements.txt
 
 ## Data Preparation
 
-Download raw source text:
+Run the complete corpus stage: download raw source text, clean it, create
+packed continued-pretrain corpus files, and write training-pair JSONL files:
 
 ```bash
-./get_raw_text.zsh --jobs 8
+./pipeline.zsh corpus --jobs 8
 ```
 
-Clean raw text into the prepared directory:
+Run individual corpus steps when iterating:
 
 ```bash
-python3 data_prep/clean_text.py --input-dir "$RAWTEXT_DIR" --output-dir "$PREPARED_DIR"
-```
-
-Generate packed token corpora for continued pretraining:
-
-```bash
-python3 data_prep/generate_pretrain_corpus.py \
-  --text_dir "$PREPARED_DIR" \
-  --corpus_dir "$CORPUS_DIR" \
-  --num_proc 1
-```
-
-Create instruction/training pairs when that workflow is needed:
-
-```bash
-python3 data_prep/make_training_pairs.py
+./pipeline.zsh raw-text --jobs 8
+./pipeline.zsh clean-text
+./pipeline.zsh pretrain-corpus
+./pipeline.zsh pairs
 ```
 
 Utility helpers live in `utils/`, for example:
@@ -101,7 +90,7 @@ python3 utils/pdf_to_txt.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
 Build a FAISS RAG index independently of any LoRA training:
 
 ```bash
-./build_rag_index.zsh
+./pipeline.zsh rag
 ```
 
 Equivalent module entrypoint:
@@ -127,7 +116,7 @@ when it differs from the current environment.
 Run the existing GPU/CPU-selecting training pipeline:
 
 ```bash
-./run_train_pipeline.zsh
+./pipeline.zsh lora
 ```
 
 Or call the module directly:
@@ -146,7 +135,13 @@ python3 training/train_lora_cpu.py
 Continued pretraining remains a separate workflow:
 
 ```bash
-./run_continued_pretrain.zsh --corpus_dir "$CORPUS_DIR"
+./pipeline.zsh pretrain
+```
+
+Pass trainer-specific arguments after `--`:
+
+```bash
+./pipeline.zsh pretrain -- --corpus_dir "$CORPUS_DIR"
 ```
 
 LoRA training consumes prepared datasets from `data_prep/`; it does not require
@@ -173,7 +168,7 @@ python3 inference/chat_rag.py
 The top-level launcher still works and applies GPU/runtime defaults:
 
 ```bash
-./launch_chat.zsh
+./chat.zsh
 ```
 
 For gpt-oss teaching-style RAG inspection:
@@ -198,13 +193,19 @@ Preview selected commands without running them:
 python3 scripts/run_pipeline.py --dry-run
 ```
 
-The orchestrator only coordinates. It calls `get_raw_text.zsh`,
-`build_rag_index.zsh`, `training/train_pipeline.py`, and
+The orchestrator only coordinates. It calls `pipeline.zsh corpus`,
+`pipeline.zsh rag`, `training/train_pipeline.py`, and
 `inference/chat_rag.py` rather than duplicating their implementation logic.
+
+For the full top-level training flow without prompts:
+
+```bash
+./pipeline.zsh --build-corpus --build-rag --pretrain
+```
 
 ## GPU Runtime Notes
 
-On high-VRAM NVIDIA GPUs such as an A100, `launch_chat.zsh` defaults to a
+On high-VRAM NVIDIA GPUs such as an A100, `chat.zsh` defaults to a
 single-GPU generator placement and avoids the old 5 GiB memory cap. On low-VRAM
 NVIDIA/ROCm cards, it keeps conservative defaults and prints the selected
 device map, memory cap, dtype, and attention settings.
@@ -212,10 +213,10 @@ device map, memory cap, dtype, and attention settings.
 Useful overrides:
 
 ```bash
-GENERATOR_DEVICE_MAP=auto ./launch_chat.zsh
-GENERATOR_GPU_MEMORY=36GiB ./launch_chat.zsh
-GENERATOR_COMPILE=1 ./launch_chat.zsh
-RAG_EMBED_DEVICE=cuda ./launch_chat.zsh
+GENERATOR_DEVICE_MAP=auto ./chat.zsh
+GENERATOR_GPU_MEMORY=36GiB ./chat.zsh
+GENERATOR_COMPILE=1 ./chat.zsh
+RAG_EMBED_DEVICE=cuda ./chat.zsh
 ```
 
 ## Compatibility Notes
