@@ -80,6 +80,13 @@ Pass-through:
 Other:
   -h, --help            Show this help.
 
+Interactive mode:
+  Running ./pipeline.zsh with no command prompts for these stages:
+    1. Download content.
+    2. Create/re-create corpus from cleaned text.
+    3. Build the RAG index.
+    4. Pre-train the model from the generated token corpus.
+
 Environment:
   RAWTEXT_DIR           Default output directory, usually set by .env/.runtime.
   PREPARED_DIR          Default cleaned text directory.
@@ -88,6 +95,72 @@ Environment:
   RAW_TEXT_JOBS         Default parallel downloader command count.
   PYTHON                Python executable to use after .runtime is loaded.
 EOF
+}
+
+ask_yes_no() {
+  local prompt="$1"
+  local default="${2:-y}"
+  local answer suffix
+
+  if [[ "$default" == "y" ]]; then
+    suffix="[Y/n]"
+  else
+    suffix="[y/N]"
+  fi
+
+  while true; do
+    printf "%s %s " "$prompt" "$suffix"
+    if ! read -r answer; then
+      answer=""
+    fi
+    answer="${answer:l}"
+
+    if [[ -z "$answer" ]]; then
+      answer="$default"
+    fi
+
+    case "$answer" in
+      y|yes)
+        return 0
+        ;;
+      n|no)
+        return 1
+        ;;
+      *)
+        print "Please answer y or n."
+        ;;
+    esac
+  done
+}
+
+prompt_pipeline_commands() {
+  print "Select pipeline stages to run:"
+  print "  1. Download content into raw text."
+  print "  2. Create/re-create corpus from cleaned text."
+  print "  3. Build the RAG index."
+  print "  4. Pre-train the model from generated token corpus."
+  print
+
+  if ask_yes_no "1. Download content?" y; then
+    COMMANDS+=(raw-text)
+  fi
+
+  if ask_yes_no "2. Create/re-create corpus from cleaned text?" y; then
+    COMMANDS+=(clean-text pretrain-corpus)
+  fi
+
+  if ask_yes_no "3. Build the RAG index?" y; then
+    COMMANDS+=(rag)
+  fi
+
+  if ask_yes_no "4. Pre-train the model from generated tokens?" n; then
+    COMMANDS+=(pretrain)
+  fi
+
+  if [[ "${#COMMANDS[@]}" -eq 0 ]]; then
+    print "No stages selected; exiting."
+    exit 0
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -218,7 +291,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "${#COMMANDS[@]}" -eq 0 ]]; then
-  COMMANDS=(all)
+  if [[ -t 0 ]]; then
+    prompt_pipeline_commands
+  else
+    COMMANDS=(all)
+  fi
 fi
 
 if [[ -f "$ROOT/.runtime" ]]; then
