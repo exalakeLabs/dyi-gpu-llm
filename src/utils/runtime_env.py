@@ -10,7 +10,7 @@ import re
 import shlex
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = REPO_ROOT / ".env"
 
 _ENV_REF_RE = re.compile(

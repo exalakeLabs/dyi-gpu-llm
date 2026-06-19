@@ -9,18 +9,20 @@ independently:
 ```text
 project-root/
   install.zsh
+  pipeline.zsh
+  chat.zsh
   .env.example
-  data_prep/      # downloads, cleanup, corpus creation, training-pair generation
-  rag/            # chunking, embedding, FAISS index creation, index metadata
-  training/       # LoRA/SFT and continued-pretraining entrypoints
-  inference/      # base, adapter, RAG, and adapter+RAG chat/inference
-  utils/          # shared env/http helpers plus PDF/OCR/text conversion utilities
-  scripts/        # guided orchestration
-  src/            # compatibility wrappers for old src/... commands
+  src/
+    data_prep/    # downloads, cleanup, corpus creation, training-pair generation
+    rag/          # chunking, embedding, FAISS index creation, index metadata
+    training/     # LoRA/SFT and continued-pretraining entrypoints
+    inference/    # base, adapter, RAG, and adapter+RAG chat/inference
+    utils/        # shared env/http helpers plus PDF/OCR/text conversion utilities
+    run_pipeline.py
 ```
 
-The old `src/*.py` entrypoints remain as thin wrappers, so existing commands and
-notebooks can keep working while new workflows use the module folders directly.
+The top-level Zsh launchers are the recommended entrypoints. The `src/*.py`
+files are compatibility wrappers around the package modules under `src/`.
 
 ## Configuration
 
@@ -78,11 +80,11 @@ Run individual corpus steps when iterating:
 ./pipeline.zsh pairs
 ```
 
-Utility helpers live in `utils/`, for example:
+Utility helpers live in `src/utils/`, for example:
 
 ```bash
-python3 utils/extract_pdfs.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
-python3 utils/pdf_to_txt.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
+python3 src/utils/extract_pdfs.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
+python3 src/utils/pdf_to_txt.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
 ```
 
 ## RAG Index Building
@@ -96,7 +98,7 @@ Build a FAISS RAG index independently of any LoRA training:
 Equivalent module entrypoint:
 
 ```bash
-python3 rag/index_builder.py \
+python3 src/rag/index_builder.py \
   --input-dir "$PREPARED_DIR" \
   --output-dir "$RAG_DIR" \
   --embed-model "$EMBED_MODEL"
@@ -122,14 +124,14 @@ Run the existing GPU/CPU-selecting training pipeline:
 Or call the module directly:
 
 ```bash
-python3 training/train_pipeline.py
+python3 src/training/train_pipeline.py
 ```
 
 Run a specific trainer:
 
 ```bash
-python3 training/train_lora_gpu.py
-python3 training/train_lora_cpu.py
+python3 src/training/train_lora_gpu.py
+python3 src/training/train_lora_cpu.py
 ```
 
 Continued pretraining remains a separate workflow:
@@ -144,7 +146,7 @@ Pass trainer-specific arguments after `--`:
 ./pipeline.zsh pretrain -- --corpus_dir "$CORPUS_DIR"
 ```
 
-LoRA training consumes prepared datasets from `data_prep/`; it does not require
+LoRA training consumes prepared datasets from `src/data_prep/`; it does not require
 a RAG index.
 
 ## Chat And Inference
@@ -153,16 +155,16 @@ The main chat entrypoint supports all runtime combinations:
 
 ```bash
 # Base model only
-python3 inference/chat_rag.py --no-rag --no-adapter
+python3 src/inference/chat_rag.py --no-rag --no-adapter
 
 # Base model + LoRA adapter
-python3 inference/chat_rag.py --no-rag
+python3 src/inference/chat_rag.py --no-rag
 
 # Base model + RAG
-python3 inference/chat_rag.py --no-adapter
+python3 src/inference/chat_rag.py --no-adapter
 
 # Base model + LoRA adapter + RAG
-python3 inference/chat_rag.py
+python3 src/inference/chat_rag.py
 ```
 
 The top-level launcher still works and applies GPU/runtime defaults:
@@ -174,9 +176,9 @@ The top-level launcher still works and applies GPU/runtime defaults:
 For gpt-oss teaching-style RAG inspection:
 
 ```bash
-python3 inference/teach_gpt_oss_rag.py --question "What does the prepared material say?"
-python3 inference/teach_gpt_oss_rag.py --dry-run --question "What should I know?"
-python3 inference/teach_gpt_oss_rag.py --print-teaching-prompt
+python3 src/inference/teach_gpt_oss_rag.py --question "What does the prepared material say?"
+python3 src/inference/teach_gpt_oss_rag.py --dry-run --question "What should I know?"
+python3 src/inference/teach_gpt_oss_rag.py --print-teaching-prompt
 ```
 
 ## Guided Pipeline
@@ -184,18 +186,18 @@ python3 inference/teach_gpt_oss_rag.py --print-teaching-prompt
 Use the guided orchestrator to choose which stages to run:
 
 ```bash
-python3 scripts/run_pipeline.py
+python3 src/run_pipeline.py
 ```
 
 Preview selected commands without running them:
 
 ```bash
-python3 scripts/run_pipeline.py --dry-run
+python3 src/run_pipeline.py --dry-run
 ```
 
 The orchestrator only coordinates. It calls `pipeline.zsh corpus`,
-`pipeline.zsh rag`, `training/train_pipeline.py`, and
-`inference/chat_rag.py` rather than duplicating their implementation logic.
+`pipeline.zsh rag`, `src/training/train_pipeline.py`, and
+`src/inference/chat_rag.py` rather than duplicating their implementation logic.
 
 For the full top-level training flow without prompts:
 

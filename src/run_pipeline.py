@@ -51,7 +51,7 @@ def python_cmd() -> str:
 
 def chat_command(mode: str) -> list[str]:
     py = python_cmd()
-    cmd = [py, str(ROOT / "inference" / "chat_rag.py")]
+    cmd = [py, str(ROOT / "src" / "inference" / "chat_rag.py")]
     if mode in {"base", "adapter"}:
         cmd.append("--no-rag")
     if mode in {"base", "rag"}:
@@ -78,7 +78,7 @@ def main() -> int:
         steps.append([str(ROOT / "pipeline.zsh"), "rag"])
 
     if ask_yes_no("Run LoRA training?", default=False):
-        steps.append([py, str(ROOT / "training" / "train_pipeline.py")])
+        steps.append([py, str(ROOT / "src" / "training" / "train_pipeline.py")])
 
     if ask_yes_no("Run chat/inference afterward?", default=True):
         mode = ask_choice(

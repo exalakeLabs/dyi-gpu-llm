@@ -427,7 +427,7 @@ print "Context chars: $CONTEXT_CHARS"
 print "Max new tokens: $NEW_TOKENS"
 
 if [[ "${LAUNCH_CHAT_DRY_RUN:-0}" == "1" ]]; then
-  print "Dry run: not starting inference/chat_rag.py"
+  print "Dry run: not starting src/inference/chat_rag.py"
   exit 0
 fi
 
@@ -444,4 +444,4 @@ if [[ -n "$REQUIRE_ACCELERATOR" ]]; then
   CHAT_ARGS+=(--require-accelerator "$REQUIRE_ACCELERATOR")
 fi
 
-exec "${PYTHON:-python3}" ./inference/chat_rag.py "${CHAT_ARGS[@]}"
+exec "${PYTHON:-python3}" ./src/inference/chat_rag.py "${CHAT_ARGS[@]}"

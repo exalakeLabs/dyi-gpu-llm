@@ -412,7 +412,7 @@ download_gutenberg() {
 
     cmd=(
       "$PYTHON"
-      "$ROOT/data_prep/download_gutenberg.py"
+      "$ROOT/src/data_prep/download_gutenberg.py"
       --query "$query"
       --max-books "$max_books"
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
@@ -436,7 +436,7 @@ download_wikipedia() {
   for title in "${WIKIPEDIA_TITLES[@]}"; do
     run_cmd_async \
       "$PYTHON" \
-      "$ROOT/data_prep/download_web_text.py" \
+      "$ROOT/src/data_prep/download_web_text.py" \
       --wikipedia-title "$title" \
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
   done
@@ -465,7 +465,7 @@ download_wikipedia() {
 
     cmd=(
       "$PYTHON"
-      "$ROOT/data_prep/download_web_text.py"
+      "$ROOT/src/data_prep/download_web_text.py"
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
       --crawl-depth "$WIKI_CRAWL_DEPTH"
       --crawl-max-pages "$WIKI_CRAWL_MAX_PAGES"
@@ -492,7 +492,7 @@ download_html() {
   for url in "${HTML_URLS[@]}"; do
     run_cmd_async \
       "$PYTHON" \
-      "$ROOT/data_prep/download_web_text.py" \
+      "$ROOT/src/data_prep/download_web_text.py" \
       --url "$url" \
       --output-dir "$RAW_TEXT_OUTPUT_DIR"
   done
@@ -517,7 +517,7 @@ require_python_helpers() {
 from pathlib import Path
 import sys
 
-sys.path.insert(0, str(Path.cwd()))
+sys.path.insert(0, str(Path.cwd() / "src"))
 import utils.http_client
 PY
   then
@@ -557,14 +557,14 @@ run_raw_text() {
 
 run_clean_text() {
   mkdir -p "$PREPARED_OUTPUT_DIR"
-  run_cmd "$PYTHON" "$ROOT/data_prep/clean_text.py" \
+  run_cmd "$PYTHON" "$ROOT/src/data_prep/clean_text.py" \
     --input-dir "$RAW_TEXT_OUTPUT_DIR" \
     --output-dir "$PREPARED_OUTPUT_DIR"
 }
 
 run_pretrain_corpus() {
   mkdir -p "$CORPUS_OUTPUT_DIR"
-  run_cmd "$PYTHON" "$ROOT/data_prep/generate_pretrain_corpus.py" \
+  run_cmd "$PYTHON" "$ROOT/src/data_prep/generate_pretrain_corpus.py" \
     --text_dir "$PREPARED_OUTPUT_DIR" \
     --corpus_dir "$CORPUS_OUTPUT_DIR" \
     --num_proc "$DATASET_NUM_PROC"
@@ -572,7 +572,7 @@ run_pretrain_corpus() {
 
 run_pairs() {
   mkdir -p "$CORPUS_OUTPUT_DIR"
-  run_cmd "$PYTHON" "$ROOT/data_prep/make_training_pairs.py" \
+  run_cmd "$PYTHON" "$ROOT/src/data_prep/make_training_pairs.py" \
     --text-dir "$PREPARED_OUTPUT_DIR" \
     --output-train "$TRAINING_PAIRS_TRAIN" \
     --output-val "$TRAINING_PAIRS_VAL"
@@ -627,7 +627,7 @@ run_rag() {
       ;;
   esac
 
-  run_cmd "$PYTHON" "$ROOT/rag/index_builder.py" \
+  run_cmd "$PYTHON" "$ROOT/src/rag/index_builder.py" \
     --input-dir "$input_dir" \
     --output-dir "$output_dir" \
     --embed-model "$embed" \
@@ -687,14 +687,14 @@ run_pretrain() {
   print "  PYTORCH_CUDA_ALLOC_CONF=$PYTORCH_CUDA_ALLOC_CONF"
   print "  injected args: ${eval_prompt_args[*]} ${rocm_safe_args[*]}"
 
-  run_cmd "$PYTHON" "$ROOT/training/continued_pretrain_partial.py" \
+  run_cmd "$PYTHON" "$ROOT/src/training/continued_pretrain_partial.py" \
     "${eval_prompt_args[@]}" \
     "${rocm_safe_args[@]}" \
     "${PASSTHROUGH_ARGS[@]}"
 }
 
 run_lora() {
-  run_cmd "$PYTHON" "$ROOT/training/train_pipeline.py" "${PASSTHROUGH_ARGS[@]}"
+  run_cmd "$PYTHON" "$ROOT/src/training/train_pipeline.py" "${PASSTHROUGH_ARGS[@]}"
 }
 
 run_install_gh() {
