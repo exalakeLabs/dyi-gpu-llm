@@ -1,24 +1,20 @@
-The chief advantage of the scientific method is that
-When a theory is tested by experiment, the important question is whether
-In practical engineering, a successful design must balance
-The relation between mathematics and measurement can be seen most clearly when
-Statistics is useful because it allows us to reason about
-An error in observation may arise from
-In commerce, price is not merely a number but
-The movement of capital through a banking system depends upon
-A prudent investor distinguishes between value and speculation by
-The purpose of accounting is to make visible
-Economic growth is affected by labor, capital, and
-In a free market, competition tends to
-The rule of law requires that public authority be
-A constitution is effective only when
-Good government depends less upon force than upon
-The study of history teaches that institutions change when
-In modern history, industrial development transformed society by
-A biography is most valuable when it shows
-Logic is the art of distinguishing
-An argument may be valid even when
-Philosophy begins when ordinary assumptions are
-The relation between ethics and law is complicated because
-Education should cultivate both memory and
-Clear writing in technical subjects requires
+Explain the scientific principle behind a retrieved claim, citing only the provided context.
+Given conflicting scientific passages, identify which claim is better supported by the retrieved evidence and why.
+Answer a physics question using the supplied context, including units, assumptions, and any limits of the evidence.
+Answer a chemistry question from the retrieved context, distinguishing observations from interpretations.
+Answer a biology question from the retrieved context, making clear whether the evidence supports mechanism, correlation, or classification.
+Answer an earth science question from the retrieved context, noting scale, uncertainty, and relevant measurements.
+Summarize the experimental design described in the retrieved context, including hypothesis, method, variables, and controls.
+Evaluate whether the retrieved context is sufficient to answer a science question; if not, state what evidence is missing.
+Extract the quantitative facts needed to solve a scientific question and show the reasoning step by step.
+Compare two scientific explanations in the retrieved context and decide which is more consistent with the evidence.
+Identify possible sources of experimental error or measurement bias described in the retrieved context.
+Turn retrieved scientific notes into a concise answer that preserves caveats and avoids unsupported claims.
+Explain how a mathematical model in the retrieved context connects to real-world measurement.
+Use the retrieved context to answer a technical engineering question, balancing accuracy, constraints, and uncertainty.
+State when the answer cannot be determined from the retrieved context and propose a better retrieval query.
+Judge whether the retrieved passages are relevant to the question and explain how retrieval quality could be improved.
+Rewrite a poor answer so that every scientific claim is grounded in retrieved context.
+Identify missing metadata, terminology, or source coverage that would improve RAG training for scientific questions.
+Generate a high-quality science QA pair from the retrieved context that tests factual grounding rather than memorization.
+Explain what the model should learn from a retrieved scientific passage to improve future RAG answers.

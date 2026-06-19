@@ -11,6 +11,7 @@ PRESERVE_RUNTIME_ENV=(
   CUDA_VISIBLE_DEVICES
   CUDA_VISIBLE_DEVICES_VALUE
   EMBED_MODEL
+  EVAL_PROMPTS
   GENERATOR_ATTN_IMPLEMENTATION
   GENERATOR_CPU_MEMORY
   GENERATOR_CPU_MEMORY_FALLBACK
@@ -40,6 +41,7 @@ PRESERVE_RUNTIME_ENV=(
   RAG_EMBED_DEVICE
   RERANKER_MODEL
   RETRIEVE_K
+  SYSTEM_PROMPT
 )
 typeset -A RUNTIME_ENV_OVERRIDES
 for name in "${PRESERVE_RUNTIME_ENV[@]}"; do
@@ -426,6 +428,21 @@ print "Retrieve top-k: $RETRIEVE_TOP_K"
 print "Context chars: $CONTEXT_CHARS"
 print "Max new tokens: $NEW_TOKENS"
 
+EVAL_PROMPTS_FILE="${EVAL_PROMPTS:-$ROOT/eval_prompts.txt}"
+CHAT_SYSTEM_PROMPT="${SYSTEM_PROMPT:-Answer science and technical questions using the retrieved context. Be precise, cite uncertainty, and say when the context is insufficient.}"
+if [[ -f "$EVAL_PROMPTS_FILE" ]]; then
+  EVAL_PROMPT_GUIDANCE="$(awk 'NF {print "- " $0}' "$EVAL_PROMPTS_FILE")"
+  if [[ -n "$EVAL_PROMPT_GUIDANCE" ]]; then
+    CHAT_SYSTEM_PROMPT="${CHAT_SYSTEM_PROMPT}
+
+Use these evaluation priorities from ${EVAL_PROMPTS_FILE} when answering:
+${EVAL_PROMPT_GUIDANCE}"
+    print "Eval prompt guidance: $EVAL_PROMPTS_FILE"
+  fi
+else
+  print "warning: eval prompts file not found: $EVAL_PROMPTS_FILE"
+fi
+
 if [[ "${LAUNCH_CHAT_DRY_RUN:-0}" == "1" ]]; then
   print "Dry run: not starting src/inference/chat_rag.py"
   exit 0
@@ -439,6 +456,7 @@ CHAT_ARGS=(
   --top-k "$RETRIEVE_TOP_K"
   --max-context-chars "$CONTEXT_CHARS"
   --max-new-tokens "$NEW_TOKENS"
+  --system-prompt "$CHAT_SYSTEM_PROMPT"
 )
 if [[ -n "$REQUIRE_ACCELERATOR" ]]; then
   CHAT_ARGS+=(--require-accelerator "$REQUIRE_ACCELERATOR")
