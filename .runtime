@@ -48,7 +48,6 @@ echo
 echo "Runtime ready:"
 echo "  python: $(command -v python)"
 echo "  version: $(python --version 2>&1)"
-echo "  MODEL_ROOT: ${MODEL_ROOT:-<unset>}"
 echo "  RAWTEXT_DIR: ${RAWTEXT_DIR:-<unset>}"
 echo "  PREPARED_DIR: ${PREPARED_DIR:-<unset>}"
 echo "  RAG_DIR: ${RAG_DIR:-<unset>}"

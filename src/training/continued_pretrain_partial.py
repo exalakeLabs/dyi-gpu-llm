@@ -80,7 +80,7 @@ try:
 except ImportError:
     from . import _bootstrap  # noqa: F401
 
-from inference.model_runtime import patch_rocm_grouped_mm, patch_rocm_isin
+from inference.model_runtime import is_rocm, patch_rocm_grouped_mm, patch_rocm_isin
 from utils.runtime_env import env_float, env_int, env_str
 
 DEFAULT_ATTENTION = env_str("DEFAULT_ATTENTION", "auto")
@@ -144,6 +144,27 @@ def resolve_torch_dtype(dtype_name):
         "fp32": torch.float32,
     }
     return dtypes[dtype_name]
+
+
+def gpu_supports_tf32(device_id=0):
+    if not torch.cuda.is_available() or is_rocm():
+        return False
+    try:
+        major, _minor = torch.cuda.get_device_capability(device_id)
+        return major >= 8
+    except Exception:
+        return False
+
+
+def resolve_tf32(requested_tf32, device_id=0):
+    if not requested_tf32:
+        return False
+    if gpu_supports_tf32(device_id):
+        return True
+
+    backend = "ROCm/HIP" if is_rocm() else "CUDA"
+    print(f"TF32 requested but unsupported on this {backend} device; disabling TF32.")
+    return False
 
 
 def configure_torch_backend(tf32, float32_matmul_precision):
@@ -470,7 +491,7 @@ def make_training_arguments(
     save_total_limit=DEFAULT_SAVE_TOTAL_LIMIT,
     logging_steps=DEFAULT_LOGGING_STEPS,
     dtype=torch.bfloat16,
-    tf32=True,
+    tf32=False,
     gradient_checkpointing=True,
     gradient_checkpointing_use_reentrant=False,
     optim=DEFAULT_OPTIM,
@@ -652,6 +673,7 @@ def main():
         "--tf32",
         action=argparse.BooleanOptionalAction,
         default=True,
+        help="Enable TF32 on NVIDIA Ampere+ GPUs. Disabled automatically on ROCm/AMD.",
     )
 
     parser.add_argument(
@@ -794,9 +816,10 @@ def main():
     output_dir = Path(args.output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
     dtype = resolve_torch_dtype(args.dtype)
+    tf32 = resolve_tf32(args.tf32)
 
     configure_torch_backend(
-        tf32=args.tf32,
+        tf32=tf32,
         float32_matmul_precision=args.float32_matmul_precision,
     )
     patch_rocm_isin()
@@ -916,7 +939,7 @@ def main():
         save_total_limit=args.save_total_limit,
         logging_steps=args.logging_steps,
         dtype=dtype,
-        tf32=args.tf32,
+        tf32=tf32,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_use_reentrant=args.gradient_checkpointing_use_reentrant,
         optim=args.optim,
