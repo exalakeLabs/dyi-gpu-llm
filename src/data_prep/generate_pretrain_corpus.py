@@ -28,11 +28,14 @@ python src/generate_pretrain_corpus.py \
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
+from typing import Optional
 
-from datasets import Dataset
+from datasets import Dataset, load_from_disk
 from transformers import AutoTokenizer
 
 try:
@@ -51,6 +54,8 @@ DEFAULT_SEED = env_int("DEFAULT_SEED", 42)
 DEFAULT_SEQ_LEN = env_int("DEFAULT_SEQ_LEN", 2048)
 DEFAULT_TEXT_DIR = env_str("DEFAULT_TEXT_DIR")
 DEFAULT_TOKENIZE_BATCH_SIZE = env_int("DEFAULT_TOKENIZE_BATCH_SIZE", 128)
+
+CHECKPOINT_VERSION = 1
 
 
 def resolve_num_proc(dataset_num_proc: int) -> int:
@@ -83,6 +88,133 @@ def load_text_files(text_dir: Path, glob_pattern: str, min_chars: int) -> Datase
         raise SystemExit(f"No usable text files found under {text_dir}")
 
     return Dataset.from_list(texts)
+
+
+def source_fingerprint(text_dir: Path, glob_pattern: str, min_chars: int) -> str:
+    digest = hashlib.sha256()
+    digest.update(str(text_dir.resolve()).encode("utf-8", errors="surrogateescape"))
+    digest.update(b"\0")
+    digest.update(glob_pattern.encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(str(min_chars).encode("ascii"))
+
+    for path in sorted(text_dir.rglob(glob_pattern)):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+
+        relative = path.relative_to(text_dir)
+        digest.update(b"\0")
+        digest.update(str(relative).encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        digest.update(str(stat.st_size).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(str(stat.st_mtime_ns).encode("ascii"))
+
+    return digest.hexdigest()
+
+
+def checkpoint_config(
+    args: argparse.Namespace,
+    text_dir: Path,
+    source_hash: str,
+) -> dict:
+    return {
+        "version": CHECKPOINT_VERSION,
+        "model_name": args.model_name,
+        "text_dir": str(text_dir.resolve()),
+        "glob": args.glob,
+        "seq_len": args.seq_len,
+        "eval_ratio": args.eval_ratio,
+        "seed": args.seed,
+        "min_chars": args.min_chars,
+        "source_fingerprint": source_hash,
+    }
+
+
+def checkpoint_stage_dir(checkpoint_dir: Path, stage: str) -> Path:
+    return checkpoint_dir / stage
+
+
+def checkpoint_manifest_path(stage_dir: Path) -> Path:
+    return stage_dir / "checkpoint_manifest.json"
+
+
+def load_checkpoint(
+    checkpoint_dir: Optional[Path],
+    stage: str,
+    config: dict,
+) -> Optional[Dataset]:
+    if checkpoint_dir is None:
+        return None
+
+    stage_dir = checkpoint_stage_dir(checkpoint_dir, stage)
+    manifest_path = checkpoint_manifest_path(stage_dir)
+    if not manifest_path.exists():
+        return None
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Ignoring unreadable checkpoint {stage_dir}: {exc}")
+        return None
+
+    if manifest.get("config") != config:
+        print(f"Ignoring stale checkpoint: {stage_dir}")
+        return None
+
+    print(f"Loading checkpoint: {stage_dir}")
+    return load_from_disk(str(stage_dir))
+
+
+def save_checkpoint(
+    dataset: Dataset,
+    checkpoint_dir: Optional[Path],
+    stage: str,
+    config: dict,
+) -> None:
+    if checkpoint_dir is None:
+        return
+
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    stage_dir = checkpoint_stage_dir(checkpoint_dir, stage)
+    tmp_dir = checkpoint_dir / f".{stage}.tmp"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+
+    dataset.save_to_disk(str(tmp_dir))
+    checkpoint_manifest_path(tmp_dir).write_text(
+        json.dumps(
+            {
+                "stage": stage,
+                "config": config,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    if stage_dir.exists():
+        shutil.rmtree(stage_dir)
+    tmp_dir.rename(stage_dir)
+
+
+def get_or_create_checkpoint(
+    checkpoint_dir: Optional[Path],
+    stage: str,
+    config: dict,
+    build,
+) -> Dataset:
+    dataset = load_checkpoint(checkpoint_dir, stage, config)
+    if dataset is not None:
+        return dataset
+
+    dataset = build()
+    save_checkpoint(dataset, checkpoint_dir, stage, config)
+    return dataset
 
 
 def tokenize_and_pack_dataset(
@@ -276,11 +408,36 @@ def parse_args() -> argparse.Namespace:
         help="Documents per tokenizer batch. Lower this if tokenization is killed for memory.",
     )
 
+    parser.add_argument(
+        "--checkpoint_dir",
+        default=None,
+        help=(
+            "Directory for resumable dataset checkpoints. Defaults to "
+            "<corpus_dir>/.generate_pretrain_corpus_checkpoints."
+        ),
+    )
+
+    parser.add_argument(
+        "--no_checkpoints",
+        action="store_true",
+        help="Disable resumable dataset checkpoints.",
+    )
+
     return parser.parse_args()
 
 
 def resolve_output_file(corpus_dir: Path, file_arg: str) -> Path:
     path = Path(file_arg).expanduser()
+    if not path.is_absolute():
+        path = corpus_dir / path
+    return path
+
+
+def resolve_checkpoint_dir(corpus_dir: Path, checkpoint_dir: Optional[str]) -> Path:
+    if checkpoint_dir is None:
+        return corpus_dir / ".generate_pretrain_corpus_checkpoints"
+
+    path = Path(checkpoint_dir).expanduser()
     if not path.is_absolute():
         path = corpus_dir / path
     return path
@@ -293,6 +450,9 @@ def main() -> int:
     corpus_dir = Path(args.corpus_dir).expanduser()
     train_file = resolve_output_file(corpus_dir, args.train_file)
     eval_file = resolve_output_file(corpus_dir, args.eval_file)
+    checkpoint_dir = None
+    if not args.no_checkpoints:
+        checkpoint_dir = resolve_checkpoint_dir(corpus_dir, args.checkpoint_dir)
 
     if args.seq_len <= 0:
         raise SystemExit("--seq_len must be greater than 0")
@@ -300,6 +460,22 @@ def main() -> int:
         raise SystemExit("--eval_ratio must be > 0 and < 1")
     if args.tokenize_batch_size <= 0:
         raise SystemExit("--tokenize_batch_size must be greater than 0")
+
+    source_hash = source_fingerprint(
+        text_dir=text_dir,
+        glob_pattern=args.glob,
+        min_chars=args.min_chars,
+    )
+    checkpoint_config_data = checkpoint_config(
+        args=args,
+        text_dir=text_dir,
+        source_hash=source_hash,
+    )
+
+    if checkpoint_dir is None:
+        print("\nDataset checkpoints disabled.\n")
+    else:
+        print(f"\nDataset checkpoint directory: {checkpoint_dir}\n")
 
     tokenizer = AutoTokenizer.from_pretrained(
         args.model_name,
@@ -321,12 +497,17 @@ def main() -> int:
         seed=args.seed,
     )
 
-    train_dataset = tokenize_and_pack_dataset(
-        train_docs,
-        tokenizer,
-        seq_len=args.seq_len,
-        dataset_num_proc=args.dataset_num_proc,
-        tokenize_batch_size=args.tokenize_batch_size,
+    train_dataset = get_or_create_checkpoint(
+        checkpoint_dir,
+        "train_packed",
+        checkpoint_config_data,
+        lambda: tokenize_and_pack_dataset(
+            train_docs,
+            tokenizer,
+            seq_len=args.seq_len,
+            dataset_num_proc=args.dataset_num_proc,
+            tokenize_batch_size=args.tokenize_batch_size,
+        ),
     )
 
     if eval_docs is None:
@@ -336,12 +517,17 @@ def main() -> int:
             seed=args.seed,
         )
     else:
-        eval_dataset = tokenize_and_pack_dataset(
-            eval_docs,
-            tokenizer,
-            seq_len=args.seq_len,
-            dataset_num_proc=args.dataset_num_proc,
-            tokenize_batch_size=args.tokenize_batch_size,
+        eval_dataset = get_or_create_checkpoint(
+            checkpoint_dir,
+            "eval_packed",
+            checkpoint_config_data,
+            lambda: tokenize_and_pack_dataset(
+                eval_docs,
+                tokenizer,
+                seq_len=args.seq_len,
+                dataset_num_proc=args.dataset_num_proc,
+                tokenize_batch_size=args.tokenize_batch_size,
+            ),
         )
         train_dataset, eval_dataset = split_empty_eval_from_train(
             train_dataset,
