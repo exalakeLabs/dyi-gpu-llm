@@ -75,6 +75,18 @@ def env_str(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 
 
+def env_file_text(name: str, default: str = "") -> str:
+    value = env_str(name)
+    if not value:
+        return default
+
+    path = repo_path(value)
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError(f"Could not read {name} file at {path}: {exc}") from exc
+
+
 def env_int(name: str, default: int) -> int:
     return int(env_str(name, str(default)))
 

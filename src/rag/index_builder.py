@@ -34,7 +34,7 @@ except ImportError:
     from . import _bootstrap  # noqa: F401
 
 from rag.rag_model_config import validate_embedding_model
-from utils.runtime_env import env_int, env_list, env_path, env_str
+from utils.runtime_env import env_file_text, env_int, env_list, env_path, env_str
 
 BATCH_SIZE = env_int("BATCH_SIZE", 32)
 CHUNK_SIZE_CHARS = env_int("CHUNK_SIZE_CHARS", 1800)
@@ -43,7 +43,7 @@ DEFAULT_EMBED_MODEL = env_str("EMBED_MODEL")
 OVERLAP_CHARS = env_int("OVERLAP_CHARS", 250)
 PREPARED_DIR = env_path("PREPARED_DIR", "prepared")
 RAG_DIR = env_path("RAG_DIR", "rag")
-DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
+DEFAULT_SYSTEM_PROMPT = env_file_text("SYSTEM_PROMPT_FILE", env_str("SYSTEM_PROMPT"))
 START_MARKERS = env_list(
     "START_MARKERS",
     [

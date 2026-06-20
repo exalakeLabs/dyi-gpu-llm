@@ -15,13 +15,13 @@ try:
 except ImportError:
     from . import _bootstrap  # noqa: F401
 
-from utils.runtime_env import env_int, env_str
+from utils.runtime_env import env_file_text, env_int, env_str
 
 DEFAULT_ATTENTION = env_str("DEFAULT_ATTENTION", "auto")
 DEFAULT_BACKEND = env_str("DEFAULT_BACKEND", "rocm:0")
 DEFAULT_DTYPE = env_str("DEFAULT_DTYPE", "auto")
 DEFAULT_MODEL_PATH = env_str("DEFAULT_MODEL_PATH")
-DEFAULT_SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
+DEFAULT_SYSTEM_PROMPT = env_file_text("SYSTEM_PROMPT_FILE", env_str("SYSTEM_PROMPT"))
 MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 
 _DTYPES = {

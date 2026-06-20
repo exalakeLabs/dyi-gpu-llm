@@ -13,10 +13,17 @@ try:
 except ImportError:
     from . import _bootstrap  # noqa: F401
 
-from utils.runtime_env import env_list, env_path
+from utils.runtime_env import env_file_text, env_list, env_path, env_str
 
 CORPUS_DIR = env_path("CORPUS_DIR", "corpus")
 PREPARED_DIR = env_path("PREPARED_DIR", "prepared")
+DEFAULT_SYSTEM_PROMPT = env_file_text(
+    "SYSTEM_PROMPT_FILE",
+    env_str(
+        "SYSTEM_PROMPT",
+        "Continue the passage faithfully, preserving its meaning, tone, and style.",
+    ),
+)
 START_MARKERS = env_list(
     "START_MARKERS",
     [
@@ -68,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--system-prompt",
-        default="Continue the passage faithfully, preserving its meaning, tone, and style.",
+        default=DEFAULT_SYSTEM_PROMPT,
         help="System prompt used when --format messages",
     )
     p.add_argument(

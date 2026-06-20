@@ -13,7 +13,7 @@ except ImportError:
 
 from inference.model_runtime import generate_text, load_generation_model
 from rag.rag_model_config import validate_embedding_model, validate_generator_model
-from utils.runtime_env import env_int, env_path, env_str
+from utils.runtime_env import env_file_text, env_int, env_path, env_str
 
 ADAPTER_DIR = env_path("ADAPTER_DIR", "output/lora/final")
 BASE_MODEL = env_str("BASE_MODEL")
@@ -24,7 +24,7 @@ MAX_NEW_TOKENS = env_int("MAX_NEW_TOKENS", 500)
 MAX_CONTEXT_CHARS = env_int("MAX_CONTEXT_CHARS", 0)
 RAG_DIR = env_path("RAG_DIR", "rag")
 RETRIEVE_K = env_int("RETRIEVE_K", 24)
-SYSTEM_PROMPT = env_str("SYSTEM_PROMPT")
+SYSTEM_PROMPT = env_file_text("SYSTEM_PROMPT_FILE", env_str("SYSTEM_PROMPT"))
 REQUIRE_ACCELERATOR = env_str("CHAT_REQUIRE_ACCELERATOR")
 
 
