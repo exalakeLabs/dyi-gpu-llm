@@ -99,6 +99,33 @@ quote_env_value() {
   print -r -- "${(qqq)value}"
 }
 
+is_path_env_var() {
+  local name="$1"
+
+  case "$name" in
+    RAWTEXT_DIR|RAW_TEXT_DIR|PDF_DIR|PREPARED_DIR|RAG_DIR|CORPUS_DIR|\
+TRAIN_FILE|LORA_DIR|ADAPTER_DIR|DEFAULT_MODEL_PATH|DEFAULT_TEXT_DIR|\
+DEFAULT_CORPUS_DIR|DEFAULT_OUTPUT_DIR|GENERATOR_OFFLOAD_DIR|VENV_DIR)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+expand_home_path_value() {
+  local value="$1"
+
+  if [[ "$value" == \~ ]]; then
+    print -r -- "$HOME"
+  elif [[ "$value" == \~/* ]]; then
+    print -r -- "$HOME/${value#\~/}"
+  else
+    print -r -- "$value"
+  fi
+}
+
 set_env_var() {
   local name="$1"
   local value="$2"
@@ -206,6 +233,10 @@ prompt_env_var() {
   read -r value
   if [[ -z "$value" ]]; then
     value="$current"
+  fi
+
+  if is_path_env_var "$name"; then
+    value="$(expand_home_path_value "$value")"
   fi
 
   export "${name}=${value}"

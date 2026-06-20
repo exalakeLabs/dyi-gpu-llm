@@ -14,6 +14,25 @@ set -a
 source "$__runtime_root/.env" || return 1
 set +a
 
+__runtime_expand_home_path() {
+  local name="$1"
+  local value="${(P)name-}"
+
+  if [[ "$value" == \~ ]]; then
+    export "${name}=$HOME"
+  elif [[ "$value" == \~/* ]]; then
+    export "${name}=$HOME/${value#\~/}"
+  fi
+}
+
+for __runtime_path_var in \
+  RAWTEXT_DIR RAW_TEXT_DIR PDF_DIR PREPARED_DIR RAG_DIR CORPUS_DIR \
+  TRAIN_FILE LORA_DIR ADAPTER_DIR DEFAULT_MODEL_PATH DEFAULT_TEXT_DIR \
+  DEFAULT_CORPUS_DIR DEFAULT_OUTPUT_DIR GENERATOR_OFFLOAD_DIR
+do
+  __runtime_expand_home_path "$__runtime_path_var"
+done
+
 if [[ -z "${RAWTEXT_DIR:-}" && -n "${RAW_TEXT_DIR:-}" ]]; then
   export RAWTEXT_DIR="$RAW_TEXT_DIR"
 fi
@@ -38,4 +57,5 @@ echo "  CORPUS_DIR: ${CORPUS_DIR:-<unset>}"
 echo "  PDF_DIR: ${PDF_DIR:-<unset>}"
 echo "  HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-<unset>}"
 
-unset __runtime_root
+unset __runtime_root __runtime_path_var
+unfunction __runtime_expand_home_path 2>/dev/null || true

@@ -23,7 +23,10 @@ def _expand_env_refs(value: str) -> str:
         name = match.group("braced") or match.group("bare")
         return os.environ.get(name, "")
 
-    return _ENV_REF_RE.sub(replace, value)
+    expanded = _ENV_REF_RE.sub(replace, value)
+    if expanded == "~" or expanded.startswith(("~/", "~\\")):
+        return str(Path(expanded).expanduser())
+    return expanded
 
 
 def load_dotenv(path: Path = ENV_PATH) -> None:
