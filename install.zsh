@@ -102,10 +102,10 @@ quote_env_value() {
 is_path_env_var() {
   local name="$1"
 
+  [[ "$name" == *_DIR || "$name" == *_FILE || "$name" == *_PATH ]] && return 0
+
   case "$name" in
-    RAWTEXT_DIR|RAW_TEXT_DIR|PDF_DIR|PREPARED_DIR|RAG_DIR|CORPUS_DIR|\
-TRAIN_FILE|LORA_DIR|ADAPTER_DIR|DEFAULT_MODEL_PATH|DEFAULT_TEXT_DIR|\
-DEFAULT_CORPUS_DIR|DEFAULT_OUTPUT_DIR|GENERATOR_OFFLOAD_DIR|VENV_DIR)
+    RAWTEXT_DIR|RAW_TEXT_DIR|VENV_DIR|GENERATOR_OFFLOAD_DIR|EVAL_PROMPTS|SYSTEM_PROMPT_FILE)
       return 0
       ;;
     *)

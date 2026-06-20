@@ -10,9 +10,35 @@ fi
 
 source "$__runtime_root/.venv/bin/activate" || return 1
 
-set -a
-source "$__runtime_root/.env" || return 1
-set +a
+__runtime_env_names=()
+
+__runtime_source_env_file() {
+  local file="$1"
+  local line name
+
+  [[ -f "$file" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ "^[[:space:]]*export[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)=" ]]; then
+      name="$match[1]"
+    elif [[ "$line" =~ "^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=" ]]; then
+      name="$match[1]"
+    else
+      continue
+    fi
+
+    if (( ! ${__runtime_env_names[(Ie)$name]} )); then
+      __runtime_env_names+=("$name")
+    fi
+  done < "$file"
+
+  set -a
+  source "$file" || return 1
+  set +a
+}
+
+__runtime_source_env_file "$__runtime_root/.env.default" || return 1
+__runtime_source_env_file "$__runtime_root/.env" || return 1
 
 __runtime_expand_home_path() {
   local name="$1"
@@ -25,12 +51,25 @@ __runtime_expand_home_path() {
   fi
 }
 
-for __runtime_path_var in \
-  RAWTEXT_DIR RAW_TEXT_DIR PDF_DIR PREPARED_DIR RAG_DIR CORPUS_DIR \
-  TRAIN_FILE LORA_DIR ADAPTER_DIR DEFAULT_MODEL_PATH DEFAULT_TEXT_DIR \
-  DEFAULT_CORPUS_DIR DEFAULT_OUTPUT_DIR GENERATOR_OFFLOAD_DIR
-do
-  __runtime_expand_home_path "$__runtime_path_var"
+__runtime_is_path_var() {
+  local name="$1"
+
+  [[ "$name" == *_DIR || "$name" == *_FILE || "$name" == *_PATH ]] && return 0
+
+  case "$name" in
+    RAWTEXT_DIR|RAW_TEXT_DIR|VENV_DIR|GENERATOR_OFFLOAD_DIR|EVAL_PROMPTS|SYSTEM_PROMPT_FILE)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+for __runtime_env_name in "${__runtime_env_names[@]}"; do
+  if __runtime_is_path_var "$__runtime_env_name"; then
+    __runtime_expand_home_path "$__runtime_env_name"
+  fi
 done
 
 if [[ -z "${RAWTEXT_DIR:-}" && -n "${RAW_TEXT_DIR:-}" ]]; then
@@ -48,13 +87,9 @@ echo
 echo "Runtime ready:"
 echo "  python: $(command -v python)"
 echo "  version: $(python --version 2>&1)"
-echo "  RAWTEXT_DIR: ${RAWTEXT_DIR:-<unset>}"
-echo "  PREPARED_DIR: ${PREPARED_DIR:-<unset>}"
-echo "  RAG_DIR: ${RAG_DIR:-<unset>}"
-echo "  MODEL_DIR: ${MODEL_DIR:-<unset>}"
-echo "  CORPUS_DIR: ${CORPUS_DIR:-<unset>}"
-echo "  PDF_DIR: ${PDF_DIR:-<unset>}"
-echo "  HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-<unset>}"
+for __runtime_env_name in "${__runtime_env_names[@]}"; do
+  echo "  ${__runtime_env_name}: ${(P)__runtime_env_name:-<unset>}"
+done
 
-unset __runtime_root __runtime_path_var
-unfunction __runtime_expand_home_path 2>/dev/null || true
+unset __runtime_root __runtime_env_name __runtime_env_names
+unfunction __runtime_source_env_file __runtime_expand_home_path __runtime_is_path_var 2>/dev/null || true
