@@ -704,7 +704,7 @@ def main():
         "--dtype",
         choices=("auto", "bf16", "fp16", "fp32"),
         default=DEFAULT_DTYPE,
-        help="Model and training dtype. Use fp16 if bf16 is unsupported.",
+        help="Model and training dtype. BF16 is preferred on RDNA3/ROCm; FP16 runs without Trainer AMP scaling.",
     )
 
     parser.add_argument(
