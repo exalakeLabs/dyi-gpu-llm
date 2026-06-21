@@ -1,157 +1,323 @@
-# llama32-local
+# DIY GPU Local
 
-Local data preparation, RAG indexing, LoRA training, and chat/inference tooling
-for Hugging Face causal language models.
+Local data preparation, RAG indexing, continued pretraining, LoRA training, and
+chat tooling for Hugging Face causal language models.
 
-The project is split into functional modules so each workflow can run
-independently:
+The project is tuned for experimenting on local hardware, including consumer
+AMD/ROCm and NVIDIA GPUs. The current defaults favor low-VRAM Radeon cards such
+as 8 GB RDNA3 parts, while leaving the knobs exposed for larger GPUs.
+
+## What This Project Does
+
+This repo lets you build a local model workspace from source documents:
+
+1. Download or import raw text.
+2. Clean the text into a prepared corpus.
+3. Build packed token corpora for continued pretraining.
+4. Build instruction/training-pair JSONL files for LoRA/SFT flows.
+5. Build a FAISS RAG index over the prepared text.
+6. Run continued pretraining or LoRA training.
+7. Chat with the base model, trained adapter, RAG index, or adapter plus RAG.
+
+The top-level Zsh launchers are the preferred entrypoints:
+
+```text
+install.zsh      Create/update .venv, install backend-specific PyTorch, prepare .env.
+pipeline.zsh     Main workflow runner for corpus, RAG, pretraining, and LoRA.
+chat.zsh         Runtime launcher with low/high-VRAM GPU profiles.
+```
+
+The Python files under `src/*.py` are compatibility wrappers around the package
+modules in `src/data_prep`, `src/rag`, `src/training`, and `src/inference`.
+
+## Layout
 
 ```text
 project-root/
+  .env.default       Current environment template used by install.zsh.
+  .env.example       Older sample env file, kept for reference.
+  eval_prompts.txt   Prompts used before/after continued pretraining.
+  prompt_engineer.txt
   install.zsh
   pipeline.zsh
   chat.zsh
-  .env.example
   src/
-    data_prep/    # downloads, cleanup, corpus creation, training-pair generation
-    rag/          # chunking, embedding, FAISS index creation, index metadata
-    training/     # LoRA/SFT and continued-pretraining entrypoints
-    inference/    # base, adapter, RAG, and adapter+RAG chat/inference
-    utils/        # shared env/http helpers plus PDF/OCR/text conversion utilities
-    run_pipeline.py
+    data_prep/       Download, clean, pack token corpus, make training pairs.
+    rag/             Chunk text, embed, write FAISS index metadata.
+    training/        LoRA/SFT and partial continued-pretraining entrypoints.
+    inference/       Chat, RAG, adapter, and runtime helpers.
+    utils/           Env, HTTP, PDF/OCR/text helpers.
 ```
 
-The top-level Zsh launchers are the recommended entrypoints. The `src/*.py`
-files are compatibility wrappers around the package modules under `src/`.
+## Quick Start
+
+Install the Python environment for your accelerator:
+
+```bash
+./install.zsh --backend rocm
+```
+
+Other supported install backends:
+
+```bash
+./install.zsh --backend cuda
+./install.zsh --backend mps
+```
+
+If you are setting up manually, copy the current template and edit paths/models:
+
+```bash
+cp .env.default .env
+```
+
+Then run one stage at a time:
+
+```bash
+./pipeline.zsh corpus --jobs 4
+./pipeline.zsh rag
+./pipeline.zsh pretrain
+./chat.zsh
+```
+
+Or run the main batch flow:
+
+```bash
+./pipeline.zsh all --jobs 4
+```
+
+`all` expands to `corpus`, `rag`, and `pretrain`.
 
 ## Configuration
 
-Copy the example env and edit paths/models:
+`pipeline.zsh` loads `.runtime` when present, then loads `.env`. `install.zsh`
+creates `.env` from `.env.default` when missing and can prompt for literal
+defaults.
+
+Important path variables:
 
 ```bash
-cp .env.example .env
+RAWTEXT_DIR=/datasets/raw-text
+PREPARED_DIR=/datasets/model_root/prepared
+CORPUS_DIR=/datasets/model_root/corpus
+RAG_DIR=/datasets/model_root/rag
+DEFAULT_OUTPUT_DIR=/datasets/model_root/model/output_partial
 ```
 
-Existing environment variable names are preserved. Important model variables:
+Important model variables:
 
 ```bash
 EMBED_MODEL=BAAI/bge-base-en-v1.5
 RERANKER_MODEL=BAAI/bge-reranker-v2-m3
-GENERATOR_MODEL=openai/gpt-oss-20b
+GENERATOR_MODEL=Qwen/Qwen2.5-3B-Instruct
 BASE_MODEL=${GENERATOR_MODEL}
 ```
 
 Keep `EMBED_MODEL` and `RERANKER_MODEL` on embedding/reranking models. Do not
-point them at `gpt-oss`; use `GENERATOR_MODEL` / `BASE_MODEL` for the chat
-model.
+point them at a generator model. Use `GENERATOR_MODEL` and `BASE_MODEL` for the
+chat/training model.
 
-## Install
-
-Use the existing installer; its behavior is unchanged:
+Prompt configuration:
 
 ```bash
-./install.zsh
+SYSTEM_PROMPT_FILE=prompt_engineer.txt
 ```
 
-If you install manually:
+`SYSTEM_PROMPT` is still supported as a fallback when no prompt file is set.
+
+## The Pipeline Runner
+
+`pipeline.zsh` is the main operator interface. It can run complete workflows,
+single stages, or one stage with pass-through arguments.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -U pip
-pip install -r requirements.txt
+./pipeline.zsh [commands] [options] [-- extra-args]
 ```
 
-## Data Preparation
+Commands:
 
-Run the complete corpus stage: download raw source text, clean it, create
-packed continued-pretrain corpus files, and write training-pair JSONL files:
+| Command | What It Runs |
+| --- | --- |
+| `all` | `corpus`, `rag`, then `pretrain` |
+| `corpus` | Download raw text, clean it, create packed pretrain corpora, create training pairs |
+| `raw-text` | Only download raw text |
+| `clean-text` | Only clean raw text into prepared text |
+| `pretrain-corpus` | Only create packed token corpora for continued pretraining |
+| `pairs` | Only create instruction/training-pair JSONL files |
+| `rag` | Build the FAISS RAG index |
+| `pretrain` | Run partial continued pretraining |
+| `lora` | Run the LoRA training pipeline |
+| `amd-monitor` | Run AMD GPU monitoring helper commands |
+| `install-gh` | Install/authenticate GitHub CLI helper commands |
+
+Convenience flags:
 
 ```bash
+./pipeline.zsh --build-corpus
+./pipeline.zsh --build-rag
+./pipeline.zsh --pretrain
+./pipeline.zsh --lora
+```
+
+Running `./pipeline.zsh` with no command starts an interactive prompt for the
+major stages.
+
+### Corpus Stage
+
+The corpus stage is the data-prep bundle:
+
+```bash
+./pipeline.zsh corpus --jobs 4
+```
+
+It runs these substeps in order:
+
+1. `raw-text`: download Project Gutenberg and Wikipedia plaintext sources.
+2. `clean-text`: normalize raw text into `PREPARED_DIR`.
+3. `pretrain-corpus`: pack token sequences into `train.jsonl` and `eval.jsonl`.
+4. `pairs`: create training-pair JSONL files.
+
+Useful corpus options:
+
+```bash
+./pipeline.zsh corpus --skip-download
+./pipeline.zsh corpus --skip-clean
+./pipeline.zsh corpus --skip-pretrain-corpus
+./pipeline.zsh corpus --skip-pairs
 ./pipeline.zsh corpus --jobs 8
+./pipeline.zsh pretrain-corpus --num-proc 2
 ```
 
-Run individual corpus steps when iterating:
+If you change `DEFAULT_SEQ_LEN`, rebuild the packed corpus:
 
 ```bash
-./pipeline.zsh raw-text --jobs 8
-./pipeline.zsh clean-text
 ./pipeline.zsh pretrain-corpus
-./pipeline.zsh pairs
 ```
 
-Utility helpers live in `src/utils/`, for example:
+### RAG Stage
 
-```bash
-python3 src/utils/extract_pdfs.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
-python3 src/utils/pdf_to_txt.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
-```
-
-## RAG Index Building
-
-Build a FAISS RAG index independently of any LoRA training:
+Build a FAISS index from `PREPARED_DIR`:
 
 ```bash
 ./pipeline.zsh rag
 ```
 
-Equivalent module entrypoint:
+Useful RAG options:
 
 ```bash
-python3 src/rag/index_builder.py \
-  --input-dir "$PREPARED_DIR" \
-  --output-dir "$RAG_DIR" \
-  --embed-model "$EMBED_MODEL"
+./pipeline.zsh rag --chunk-size 1800 --overlap 250 --batch-size 32
+./pipeline.zsh rag --embed-model BAAI/bge-base-en-v1.5
 ```
 
-The index builder writes:
+The RAG stage writes:
 
-- `index.faiss`
-- `chunks.jsonl`
-- `index_config.json`
-
-The chat runtime reads `index_config.json` and uses the recorded embedding model
-when it differs from the current environment.
-
-## LoRA Training
-
-Run the existing GPU/CPU-selecting training pipeline:
-
-```bash
-./pipeline.zsh lora
+```text
+RAG_DIR/
+  index.faiss
+  chunks.jsonl
+  index_config.json
 ```
 
-Or call the module directly:
+`index_config.json` records the embedding model, so the chat runtime can detect
+when the current environment differs from the built index.
 
-```bash
-python3 src/training/train_pipeline.py
-```
+### Continued Pretraining Stage
 
-Run a specific trainer:
-
-```bash
-python3 src/training/train_lora_gpu.py
-python3 src/training/train_lora_cpu.py
-```
-
-Continued pretraining remains a separate workflow:
+Run partial continued pretraining from the packed token corpus:
 
 ```bash
 ./pipeline.zsh pretrain
 ```
 
+`pipeline.zsh pretrain` injects a few safer defaults when you have not supplied
+the equivalent pass-through argument:
+
+```text
+--eval_prompts "$EVAL_PROMPTS"
+--corpus_dir "$CORPUS_DIR"
+--attention "$CONTINUED_PRETRAIN_ATTENTION"
+--max_memory "$CONTINUED_PRETRAIN_MAX_MEMORY"
+--optim "$CONTINUED_PRETRAIN_OPTIM"
+--mxfp4_dequantize, unless CONTINUED_PRETRAIN_MXFP4_DEQUANTIZE=0
+```
+
 Pass trainer-specific arguments after `--`:
 
 ```bash
-./pipeline.zsh pretrain -- --corpus_dir "$CORPUS_DIR"
+./pipeline.zsh pretrain -- --num_train_epochs 0.25
+./pipeline.zsh pretrain -- --train_last_n_layers 2 --no-train_lm_head
+./pipeline.zsh pretrain -- --corpus_dir "$CORPUS_DIR" --eval_prompts eval_prompts.txt
 ```
 
-LoRA training consumes prepared datasets from `src/data_prep/`; it does not require
-a RAG index.
+For low-VRAM Radeon cards, the current template uses:
+
+```bash
+DEFAULT_SEQ_LEN=512
+DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE=1
+DEFAULT_GRADIENT_ACCUMULATION_STEPS=32
+DEFAULT_TRAIN_LAST_N_LAYERS=1
+DEFAULT_TRAIN_LM_HEAD=0
+DEFAULT_DTYPE=bf16
+DEFAULT_ATTENTION=sdpa
+DEFAULT_DEVICE_MAP=single
+DEFAULT_OPTIM=adamw_torch
+CONTINUED_PRETRAIN_MAX_MEMORY=3GiB
+CONTINUED_PRETRAIN_MXFP4_DEQUANTIZE=0
+```
+
+Why these defaults matter:
+
+- BF16 avoids the FP16 AMP GradScaler failure on ROCm/RDNA3.
+- TF32 is disabled automatically unless the GPU is NVIDIA Ampere or newer.
+- `DEFAULT_TRAIN_LM_HEAD=0` avoids a large optimizer-state allocation.
+- `DEFAULT_DEVICE_MAP=single` keeps trainable layers on the GPU instead of
+  letting `device_map=auto` offload trainable upper layers to CPU.
+- `adamw_torch` is safer on ROCm than the fused CUDA optimizer path.
+
+On a larger GPU, increase `DEFAULT_TRAIN_LAST_N_LAYERS`, use a longer
+`DEFAULT_SEQ_LEN`, and consider `DEFAULT_DEVICE_MAP=auto` with a realistic
+`DEFAULT_MAX_MEMORY`.
+
+### LoRA Stage
+
+Run the LoRA training pipeline:
+
+```bash
+./pipeline.zsh lora
+```
+
+Pass LoRA trainer args after `--`:
+
+```bash
+./pipeline.zsh lora -- --num-train-epochs 1 --lora-rank 16
+```
+
+LoRA consumes the training-pair files generated by the corpus stage. It does not
+require a RAG index.
 
 ## Chat And Inference
 
-The main chat entrypoint supports all runtime combinations:
+The top-level chat launcher applies runtime profiles for low/high-VRAM machines:
+
+```bash
+./chat.zsh
+```
+
+It prints the selected generator model, device map, memory cap, dtype, offload
+directory, RAG embedder, retrieval count, and PyTorch allocation config before
+starting chat.
+
+Useful overrides:
+
+```bash
+GENERATOR_DEVICE_MAP=auto ./chat.zsh
+GENERATOR_GPU_MEMORY=4GiB ./chat.zsh
+GENERATOR_DTYPE=bf16 ./chat.zsh
+LOW_VRAM_ROCM_RUNTIME=cpu ./chat.zsh
+LOW_VRAM_ROCM_RUNTIME=rocm ./chat.zsh
+RAG_EMBED_DEVICE=rocm ./chat.zsh
+```
+
+Direct Python chat modes:
 
 ```bash
 # Base model only
@@ -167,13 +333,7 @@ python3 src/inference/chat_rag.py --no-adapter
 python3 src/inference/chat_rag.py
 ```
 
-The top-level launcher still works and applies GPU/runtime defaults:
-
-```bash
-./chat.zsh
-```
-
-For gpt-oss teaching-style RAG inspection:
+For teaching-style RAG inspection:
 
 ```bash
 python3 src/inference/teach_gpt_oss_rag.py --question "What does the prepared material say?"
@@ -181,52 +341,92 @@ python3 src/inference/teach_gpt_oss_rag.py --dry-run --question "What should I k
 python3 src/inference/teach_gpt_oss_rag.py --print-teaching-prompt
 ```
 
-## Guided Pipeline
+## Guided Python Orchestrator
 
-Use the guided orchestrator to choose which stages to run:
+`src/run_pipeline.py` is a small guided wrapper. It asks which major stages to
+run and then calls the same underlying scripts.
 
 ```bash
 python3 src/run_pipeline.py
-```
-
-Preview selected commands without running them:
-
-```bash
 python3 src/run_pipeline.py --dry-run
 ```
 
-The orchestrator only coordinates. It calls `pipeline.zsh corpus`,
-`pipeline.zsh rag`, `src/training/train_pipeline.py`, and
-`src/inference/chat_rag.py` rather than duplicating their implementation logic.
+Use `pipeline.zsh` for repeatable scripted runs. Use `src/run_pipeline.py` when
+you want prompts.
 
-For the full top-level training flow without prompts:
+## Direct Module Entrypoints
 
-```bash
-./pipeline.zsh --build-corpus --build-rag --pretrain
-```
-
-## GPU Runtime Notes
-
-On high-VRAM NVIDIA GPUs such as an A100, `chat.zsh` defaults to a
-single-GPU generator placement and avoids the old 5 GiB memory cap. On low-VRAM
-NVIDIA/ROCm cards, it keeps conservative defaults and prints the selected
-device map, memory cap, dtype, and attention settings.
-
-Useful overrides:
+Most workflows can be called directly when debugging:
 
 ```bash
-GENERATOR_DEVICE_MAP=auto ./chat.zsh
-GENERATOR_GPU_MEMORY=36GiB ./chat.zsh
-GENERATOR_COMPILE=1 ./chat.zsh
-RAG_EMBED_DEVICE=cuda ./chat.zsh
+python3 src/data_prep/clean_text.py \
+  --input-dir "$RAWTEXT_DIR" \
+  --output-dir "$PREPARED_DIR"
+
+python3 src/data_prep/generate_pretrain_corpus.py \
+  --text_dir "$PREPARED_DIR" \
+  --corpus_dir "$CORPUS_DIR"
+
+python3 src/data_prep/make_training_pairs.py --text-dir "$PREPARED_DIR"
+python3 src/rag/index_builder.py --input-dir "$PREPARED_DIR" --output-dir "$RAG_DIR"
+python3 src/training/continued_pretrain_partial.py \
+  --corpus_dir "$CORPUS_DIR" \
+  --eval_prompts eval_prompts.txt
+
+python3 src/training/train_pipeline.py
 ```
+
+PDF/OCR helpers live under `src/utils`:
+
+```bash
+python3 src/utils/extract_pdfs.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
+python3 src/utils/pdf_to_txt.py --pdf-dir "$PDF_DIR" --text-dir "$RAWTEXT_DIR"
+```
+
+## Troubleshooting
+
+`--tf32 requires Ampere or a newer GPU`
+
+TF32 is NVIDIA-specific. The continued-pretraining script now resolves TF32
+automatically and disables it on ROCm/AMD.
+
+`Attempting to unscale FP16 gradients`
+
+Use `DEFAULT_DTYPE=bf16` on RDNA3/ROCm. FP16-loaded model parameters and Trainer
+FP16 AMP do not mix cleanly with GradScaler.
+
+`No inf checks were recorded for this optimizer`
+
+This usually means no trainable parameters were on the GPU. Keep
+`DEFAULT_DEVICE_MAP=single` on low-VRAM cards, or ensure `device_map=auto` does
+not offload the trainable upper layers to CPU.
+
+HIP out of memory on an 8 GB card
+
+Try these in order:
+
+```bash
+export DEFAULT_SEQ_LEN=256
+./pipeline.zsh pretrain-corpus
+./pipeline.zsh pretrain
+```
+
+Then reduce training scope further:
+
+```bash
+export DEFAULT_TRAIN_LAST_N_LAYERS=1
+export DEFAULT_TRAIN_LM_HEAD=0
+```
+
+Embedding or reranker errors mentioning `gpt-oss`
+
+`EMBED_MODEL` and `RERANKER_MODEL` must be embedding/reranking models. Put
+generator models in `GENERATOR_MODEL` and `BASE_MODEL`.
 
 ## Compatibility Notes
 
-- `install.zsh`, `.runtime`, and `.env` loading behavior are preserved.
-- `src/*.py` files are compatibility wrappers around the new modules.
-- Existing environment variable names remain valid.
-- RAG indexes are reusable as long as the embedding model matches the index
-  metadata.
-- LoRA adapters are reusable only with the same base model they were trained
-  against.
+- `.env` is machine-local configuration. `.env.default` is the current template.
+- `.runtime` is loaded by the launchers when present.
+- `src/*.py` top-level files are compatibility wrappers around package modules.
+- RAG indexes are reusable when the embedding model matches `index_config.json`.
+- LoRA adapters are reusable only with the base model they were trained against.
