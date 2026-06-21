@@ -111,6 +111,12 @@ DEFAULT_SAVE_STEPS = env_int("DEFAULT_SAVE_STEPS", 250)
 DEFAULT_SAVE_TOTAL_LIMIT = env_int("DEFAULT_SAVE_TOTAL_LIMIT", 2)
 DEFAULT_TRAIN_FILE = env_str("DEFAULT_TRAIN_FILE", "train.jsonl")
 DEFAULT_TRAIN_LAST_N_LAYERS = env_int("DEFAULT_TRAIN_LAST_N_LAYERS", 8)
+DEFAULT_TRAIN_LM_HEAD = env_str("DEFAULT_TRAIN_LM_HEAD", "1").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 DEFAULT_WARMUP_RATIO = env_float("DEFAULT_WARMUP_RATIO", 0.03)
 DEFAULT_WEIGHT_DECAY = env_float("DEFAULT_WEIGHT_DECAY", 0.01)
 DEFAULT_CPU_MEMORY = env_str("DEFAULT_CPU_MEMORY", "64GiB")
@@ -275,9 +281,10 @@ def load_causal_lm(
     resolved_device_map = resolve_device_map(device_map)
     if resolved_device_map is not None:
         common["device_map"] = resolved_device_map
-        resolved_max_memory = resolve_max_memory(max_memory, cpu_memory)
-        if resolved_max_memory is not None:
-            common["max_memory"] = resolved_max_memory
+        if device_map == "auto":
+            resolved_max_memory = resolve_max_memory(max_memory, cpu_memory)
+            if resolved_max_memory is not None:
+                common["max_memory"] = resolved_max_memory
 
     if attention == "default":
         print("Using default attention implementation.")
@@ -329,7 +336,7 @@ def load_causal_lm(
 # Freeze lower layers
 # ============================================================
 
-def freeze_lower_layers(model, train_last_n_layers=8):
+def freeze_lower_layers(model, train_last_n_layers=8, train_lm_head=True):
 
     layers = model.model.layers
 
@@ -360,9 +367,9 @@ def freeze_lower_layers(model, train_last_n_layers=8):
         for param in model.model.norm.parameters():
             param.requires_grad = True
 
-    # Train LM head
-    for param in model.lm_head.parameters():
-        param.requires_grad = True
+    if hasattr(model, "lm_head") and train_lm_head:
+        for param in model.lm_head.parameters():
+            param.requires_grad = True
 
     # Explicitly keep embeddings frozen
     if hasattr(model.model, "embed_tokens"):
@@ -381,6 +388,45 @@ def freeze_lower_layers(model, train_last_n_layers=8):
     print(f"Trainable params: {trainable:,}")
     print(f"Total params:     {total:,}")
     print(f"Trainable %:      {(100 * trainable / total):.2f}%\n")
+
+
+def print_trainable_device_summary(model):
+    by_device = {}
+    total = 0
+    for param in model.parameters():
+        if not param.requires_grad:
+            continue
+        count = param.numel()
+        total += count
+        device = str(param.device)
+        by_device[device] = by_device.get(device, 0) + count
+
+    print("Trainable parameter devices:")
+    if not by_device:
+        print("  <none>")
+    else:
+        for device, count in sorted(by_device.items()):
+            pct = 100 * count / total
+            print(f"  {device}: {count:,} ({pct:.1f}%)")
+
+    return by_device
+
+
+def validate_trainable_device_placement(model):
+    by_device = print_trainable_device_summary(model)
+    if not by_device:
+        raise SystemExit("No trainable parameters remain after layer freezing.")
+
+    has_gpu_trainable = any(device.startswith("cuda") for device in by_device)
+    if torch.cuda.is_available() and not has_gpu_trainable:
+        raise SystemExit(
+            "No trainable parameters are on the GPU. With device_map=auto and a low "
+            "max_memory cap, Accelerate can place the frozen lower layers on GPU and "
+            "the trainable upper layers on CPU, which breaks AMP optimizer stepping. "
+            "Use DEFAULT_DEVICE_MAP=single, increase DEFAULT_MAX_MEMORY enough to keep "
+            "trainable layers on GPU, or reduce trainable state with "
+            "DEFAULT_TRAIN_LAST_N_LAYERS=1 and DEFAULT_TRAIN_LM_HEAD=0."
+        )
 
 # ============================================================
 # Evaluation
@@ -624,6 +670,12 @@ def main():
         "--train_last_n_layers",
         type=int,
         default=DEFAULT_TRAIN_LAST_N_LAYERS,
+    )
+    parser.add_argument(
+        "--train_lm_head",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_TRAIN_LM_HEAD,
+        help="Train the LM head. Disable on low-VRAM cards to avoid large optimizer state.",
     )
 
     parser.add_argument(
@@ -892,7 +944,10 @@ def main():
     freeze_lower_layers(
         model,
         train_last_n_layers=args.train_last_n_layers,
+        train_lm_head=args.train_lm_head,
     )
+    print(f"LM head trainable: {args.train_lm_head}")
+    validate_trainable_device_placement(model)
 
     # ========================================================
     # Eval prompts
@@ -954,6 +1009,7 @@ def main():
     print(f"Train batch size per device: {args.per_device_train_batch_size}")
     print(f"Gradient accumulation steps: {args.gradient_accumulation_steps}")
     print(f"Trainable upper layers: {args.train_last_n_layers}")
+    print(f"Train LM head: {args.train_lm_head}")
 
     # ========================================================
     # Trainer
