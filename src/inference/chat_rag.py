@@ -453,6 +453,29 @@ def format_context(hits, max_chars: int = MAX_CONTEXT_CHARS):
     return "\n\n".join(parts)
 
 
+def trim_history(history: list[dict[str, str]], memory_turns: int) -> list[dict[str, str]]:
+    if memory_turns <= 0:
+        return []
+    return history[-(memory_turns * 2) :]
+
+
+def retrieval_query_with_history(
+    query: str,
+    history: list[dict[str, str]],
+    memory_turns: int,
+) -> str:
+    if memory_turns <= 0 or not history:
+        return query
+
+    recent = trim_history(history, memory_turns)
+    parts = []
+    for message in recent:
+        role = message["role"].title()
+        parts.append(f"{role}: {message['content']}")
+    parts.append(f"Current question: {query}")
+    return "\n\n".join(parts)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Chat with a local FAISS RAG index.")
     parser.add_argument("--rag-dir", default=str(RAG_DIR))
@@ -467,7 +490,19 @@ def main() -> int:
     parser.add_argument("--max-context-chars", type=int, default=MAX_CONTEXT_CHARS)
     parser.add_argument("--system-prompt", default=SYSTEM_PROMPT)
     parser.add_argument("--require-accelerator", default=REQUIRE_ACCELERATOR)
+    parser.add_argument(
+        "--memory-turns",
+        type=int,
+        default=4,
+        help=(
+            "Number of prior user/assistant turns to include in each prompt. "
+            "Use 0 to disable chat memory."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.memory_turns < 0:
+        raise SystemExit("--memory-turns must be 0 or greater")
 
     print_torch_runtime_report()
     required_accelerator = validate_required_accelerator(args.require_accelerator)
@@ -509,6 +544,12 @@ def main() -> int:
     print_generator_device_report(model)
     validate_generator_accelerator(model, required_accelerator)
 
+    history: list[dict[str, str]] = []
+    if args.memory_turns > 0:
+        print(f"Chat memory: last {args.memory_turns} turn(s)")
+    else:
+        print("Chat memory: disabled")
+
     while True:
         query = input("\nPrompt> ").strip()
         if not query or query.lower() in {"quit", "exit"}:
@@ -517,7 +558,12 @@ def main() -> int:
         if args.no_rag:
             user_prompt = query
         else:
-            hits = retrieve(query, embedder, index, rows, top_k=args.top_k)
+            retrieval_query = retrieval_query_with_history(
+                query,
+                history,
+                memory_turns=args.memory_turns,
+            )
+            hits = retrieve(retrieval_query, embedder, index, rows, top_k=args.top_k)
             context = format_context(hits, max_chars=args.max_context_chars)
 
             print("\n--- RETRIEVED CONTEXT ---\n")
@@ -534,6 +580,7 @@ def main() -> int:
 
         messages = [
             {"role": "system", "content": args.system_prompt},
+            *trim_history(history, args.memory_turns),
             {"role": "user", "content": user_prompt},
         ]
 
@@ -549,6 +596,13 @@ def main() -> int:
 
         print("\n--- ANSWER ---\n")
         print(answer)
+        history.extend(
+            [
+                {"role": "user", "content": query},
+                {"role": "assistant", "content": answer},
+            ]
+        )
+        history = trim_history(history, args.memory_turns)
 
     return 0
 
