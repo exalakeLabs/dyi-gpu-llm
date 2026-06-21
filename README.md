@@ -193,6 +193,9 @@ If you change `DEFAULT_SEQ_LEN`, rebuild the packed corpus:
 ./pipeline.zsh pretrain-corpus
 ```
 
+For quick low-VRAM tests, `DEFAULT_MAX_TRAIN_TOKENS` can cap packed examples at
+training time even before you rebuild the JSONL corpus.
+
 ### RAG Stage
 
 Build a FAISS index from `PREPARED_DIR`:
@@ -251,7 +254,8 @@ Pass trainer-specific arguments after `--`:
 For low-VRAM Radeon cards, the current template uses:
 
 ```bash
-DEFAULT_SEQ_LEN=512
+DEFAULT_SEQ_LEN=256
+DEFAULT_MAX_TRAIN_TOKENS=256
 DEFAULT_PER_DEVICE_TRAIN_BATCH_SIZE=1
 DEFAULT_GRADIENT_ACCUMULATION_STEPS=32
 DEFAULT_TRAIN_LAST_N_LAYERS=1
@@ -259,7 +263,8 @@ DEFAULT_TRAIN_LM_HEAD=0
 DEFAULT_DTYPE=bf16
 DEFAULT_ATTENTION=sdpa
 DEFAULT_DEVICE_MAP=single
-DEFAULT_OPTIM=adamw_torch
+DEFAULT_OPTIM=adafactor
+DEFAULT_MAX_GRAD_NORM=0
 CONTINUED_PRETRAIN_MAX_MEMORY=3GiB
 CONTINUED_PRETRAIN_MXFP4_DEQUANTIZE=0
 ```
@@ -271,7 +276,10 @@ Why these defaults matter:
 - `DEFAULT_TRAIN_LM_HEAD=0` avoids a large optimizer-state allocation.
 - `DEFAULT_DEVICE_MAP=single` keeps trainable layers on the GPU instead of
   letting `device_map=auto` offload trainable upper layers to CPU.
-- `adamw_torch` is safer on ROCm than the fused CUDA optimizer path.
+- `adafactor` avoids Adam's two full moment buffers, which often appear after
+  the first optimizer step and can push 8 GB cards over the edge.
+- `DEFAULT_MAX_TRAIN_TOKENS` gives an immediate activation-memory cap even when
+  the packed corpus was generated at a longer sequence length.
 
 On a larger GPU, increase `DEFAULT_TRAIN_LAST_N_LAYERS`, use a longer
 `DEFAULT_SEQ_LEN`, and consider `DEFAULT_DEVICE_MAP=auto` with a realistic
@@ -407,7 +415,17 @@ Try these in order:
 
 ```bash
 export DEFAULT_SEQ_LEN=256
+export DEFAULT_MAX_TRAIN_TOKENS=256
+export DEFAULT_OPTIM=adafactor
+export DEFAULT_MAX_GRAD_NORM=0
 ./pipeline.zsh pretrain-corpus
+./pipeline.zsh pretrain
+```
+
+For a quick retry without rebuilding the corpus, the runtime cap is enough:
+
+```bash
+export DEFAULT_MAX_TRAIN_TOKENS=256
 ./pipeline.zsh pretrain
 ```
 

@@ -94,7 +94,9 @@ DEFAULT_GRADIENT_ACCUMULATION_STEPS = env_int("DEFAULT_GRADIENT_ACCUMULATION_STE
 DEFAULT_LEARNING_RATE = env_float("DEFAULT_LEARNING_RATE", 2e-6)
 DEFAULT_LOGGING_STEPS = env_int("DEFAULT_LOGGING_STEPS", 1)
 DEFAULT_LR_SCHEDULER_TYPE = env_str("DEFAULT_LR_SCHEDULER_TYPE", "cosine")
+DEFAULT_MAX_GRAD_NORM = env_float("DEFAULT_MAX_GRAD_NORM", 1.0)
 DEFAULT_MAX_MEMORY = env_str("DEFAULT_MAX_MEMORY", "")
+DEFAULT_MAX_TRAIN_TOKENS = env_int("DEFAULT_MAX_TRAIN_TOKENS", 0)
 DEFAULT_MODEL = env_str("DEFAULT_MODEL")
 DEFAULT_MXFP4_DEQUANTIZE = env_str("DEFAULT_MXFP4_DEQUANTIZE", "0").lower() in {
     "1",
@@ -268,6 +270,32 @@ def validate_token_dataset(dataset, split_name, path):
         raise SystemExit(
             f"{split_name} corpus at {path} has mismatched input_ids and labels lengths."
         )
+
+
+def sequence_length(dataset):
+    if len(dataset) == 0:
+        return 0
+    return len(dataset[0]["input_ids"])
+
+
+class TruncatingDataCollator:
+    def __init__(self, max_length=0):
+        self.max_length = max(0, max_length)
+
+    def __call__(self, features):
+        if not self.max_length:
+            return default_data_collator(features)
+
+        truncated = []
+        for feature in features:
+            item = dict(feature)
+            for key in ("input_ids", "labels", "attention_mask"):
+                value = item.get(key)
+                if value is not None and len(value) > self.max_length:
+                    item[key] = value[: self.max_length]
+            truncated.append(item)
+
+        return default_data_collator(truncated)
 
 # ============================================================
 # Model loading
@@ -579,6 +607,9 @@ def make_training_arguments(
     )
     save_steps = max(1, min(requested_save_steps, training_steps))
     eval_steps = save_steps if eval_steps is None else max(1, min(eval_steps, training_steps))
+    if optim == "adafactor" and max_grad_norm > 0:
+        print("Note: disabling Trainer gradient clipping for Adafactor.")
+        max_grad_norm = 0.0
     use_bf16 = dtype == torch.bfloat16
     use_fp16 = False
     if dtype == torch.float16:
@@ -873,7 +904,14 @@ def main():
     parser.add_argument(
         "--max_grad_norm",
         type=float,
-        default=1.0,
+        default=DEFAULT_MAX_GRAD_NORM,
+    )
+
+    parser.add_argument(
+        "--max_train_tokens",
+        type=int,
+        default=DEFAULT_MAX_TRAIN_TOKENS,
+        help="Runtime token cap for packed train/eval examples. 0 uses full corpus sequences.",
     )
 
     parser.add_argument(
@@ -912,6 +950,17 @@ def main():
 
     print(f"Train corpus: {train_file} ({len(train_dataset)} examples)")
     print(f"Eval corpus:  {eval_file} ({len(eval_dataset)} examples)")
+    train_seq_len = sequence_length(train_dataset)
+    eval_seq_len = sequence_length(eval_dataset)
+    print(f"Train sequence length: {train_seq_len}")
+    print(f"Eval sequence length:  {eval_seq_len}")
+    if args.max_train_tokens > 0:
+        print(f"Runtime train/eval token cap: {args.max_train_tokens}")
+        if train_seq_len > args.max_train_tokens or eval_seq_len > args.max_train_tokens:
+            print(
+                "Packed examples will be truncated by the data collator. "
+                "Rebuild with DEFAULT_SEQ_LEN set to this value for cleaner packing."
+            )
 
     # ========================================================
     # Load tokenizer
@@ -1032,6 +1081,9 @@ def main():
     print(f"Gradient accumulation steps: {args.gradient_accumulation_steps}")
     print(f"Trainable upper layers: {args.train_last_n_layers}")
     print(f"Train LM head: {args.train_lm_head}")
+    print(f"Max train tokens: {args.max_train_tokens or '<full sequence>'}")
+    print(f"Optimizer: {args.optim}")
+    print(f"Max grad norm: {training_args.max_grad_norm}")
 
     # ========================================================
     # Trainer
@@ -1047,7 +1099,7 @@ def main():
 
         eval_dataset=eval_dataset,
 
-        data_collator=default_data_collator,
+        data_collator=TruncatingDataCollator(args.max_train_tokens),
     )
 
     # ========================================================
