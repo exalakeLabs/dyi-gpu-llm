@@ -8,6 +8,7 @@ PRESERVE_RUNTIME_ENV=(
   ADAPTER_DIR
   BASE_MODEL
   CHAT_REQUIRE_ACCELERATOR
+  CHAT_MEMORY_TURNS
   CUDA_VISIBLE_DEVICES
   CUDA_VISIBLE_DEVICES_VALUE
   EMBED_MODEL
@@ -285,6 +286,7 @@ else
   CONTEXT_CHARS="${MAX_CONTEXT_CHARS:-0}"
   GEN_ATTN="${GENERATOR_ATTN_IMPLEMENTATION:-}"
 fi
+MEMORY_TURNS="${CHAT_MEMORY_TURNS:-4}"
 GEN_MXFP4_DEQUANTIZE="${GENERATOR_MXFP4_DEQUANTIZE:-$GEN_MXFP4_DEQUANTIZE}"
 GEN_DTYPE="${GENERATOR_DTYPE:-auto}"
 GEN_USE_KERNELS="${GENERATOR_USE_KERNELS:-0}"
@@ -428,6 +430,7 @@ print "RAG embedder: $EMBED on $RAG_EMBED_DEVICE"
 print "Retrieve top-k: $RETRIEVE_TOP_K"
 print "Context chars: $CONTEXT_CHARS"
 print "Max new tokens: $NEW_TOKENS"
+print "Chat memory turns: $MEMORY_TURNS"
 
 EVAL_PROMPTS_FILE="${EVAL_PROMPTS:-$ROOT/eval_prompts.txt}"
 CHAT_SYSTEM_PROMPT="${SYSTEM_PROMPT:-Answer science and technical questions using the retrieved context. Be precise, cite uncertainty, and say when the context is insufficient.}"
@@ -457,6 +460,7 @@ CHAT_ARGS=(
   --top-k "$RETRIEVE_TOP_K"
   --max-context-chars "$CONTEXT_CHARS"
   --max-new-tokens "$NEW_TOKENS"
+  --memory-turns "$MEMORY_TURNS"
   --system-prompt "$CHAT_SYSTEM_PROMPT"
 )
 if [[ -n "$REQUIRE_ACCELERATOR" ]]; then

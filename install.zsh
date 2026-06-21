@@ -41,6 +41,7 @@ Environment overrides:
   PROMPT_ENV         Set to 0 to skip prompts for literal .env defaults
   PROMPT_HF_TOKEN    Set to 0 to skip Hugging Face token setup (default: 1)
   HF_TOKEN_FILE      Optional file to read a Hugging Face token from (default: hf_token.txt)
+  GENERATOR_MODEL    Existing value shown as the default in the model chooser
 
 Options:
   --no-env-prompt    Skip prompts for literal .env defaults
@@ -126,6 +127,17 @@ expand_home_path_value() {
   fi
 }
 
+generator_model_options() {
+  cat <<'EOF'
+Qwen/Qwen2.5-3B-Instruct	Recommended small default; fast local RAG/chat and lightweight fine-tuning.
+Qwen/Qwen2.5-7B-Instruct	Stronger Qwen baseline; comfortable on a single A100.
+meta-llama/Llama-3.1-8B-Instruct	Strong general instruct model; may require Hugging Face license approval.
+openai/gpt-oss-20b	OpenAI open-weight reasoning model; practical on a single A100 and useful for RAG reasoning.
+openai/gpt-oss-120b	Larger OpenAI open-weight reasoning model; target this only for an 80GB A100-class node.
+custom	Enter another Hugging Face model id.
+EOF
+}
+
 set_env_var() {
   local name="$1"
   local value="$2"
@@ -174,6 +186,10 @@ literal_env_defaults() {
       name="$match[1]"
       value="$match[2]"
     else
+      continue
+    fi
+
+    if [[ "$name" == "GENERATOR_MODEL" ]]; then
       continue
     fi
 
@@ -241,6 +257,66 @@ prompt_env_var() {
 
   export "${name}=${value}"
   set_env_var "$name" "$value"
+}
+
+prompt_generator_model() {
+  local current="${GENERATOR_MODEL:-${BASE_MODEL:-Qwen/Qwen2.5-3B-Instruct}}"
+  local -a model_ids model_notes option_lines
+  local line model_id note choice selected
+
+  option_lines=("${(@f)$(generator_model_options)}")
+  model_ids=()
+  model_notes=()
+
+  for line in "$option_lines[@]"; do
+    model_id="${line%%	*}"
+    note="${line#*	}"
+    model_ids+=("$model_id")
+    model_notes+=("$note")
+  done
+
+  printf '\n\033[1;34mGenerator model\033[0m\n'
+  printf 'Choose the model used for chat/RAG generation and base fine-tuning defaults.\n\n'
+
+  local i
+  for (( i = 1; i <= ${#model_ids[@]}; i++ )); do
+    printf '  %d) %s\n     %s\n' "$i" "$model_ids[$i]" "$model_notes[$i]"
+  done
+
+  printf '\nGenerator model [%s]: ' "$current"
+  read -r choice
+
+  if [[ -z "$choice" ]]; then
+    selected="$current"
+  elif [[ "$choice" == <-> && "$choice" -ge 1 && "$choice" -le "${#model_ids[@]}" ]]; then
+    selected="$model_ids[$choice]"
+  else
+    selected="$choice"
+  fi
+
+  if [[ "${selected:l}" == "custom" ]]; then
+    printf 'Custom Hugging Face model id [%s]: ' "$current"
+    read -r selected
+    if [[ -z "$selected" ]]; then
+      selected="$current"
+    fi
+  fi
+
+  case "${selected:l}" in
+    gpt-oss:20b|gpt-oss:20)
+      selected="openai/gpt-oss-20b"
+      ;;
+    gpt-oss:120b|gpt-oss:120)
+      selected="openai/gpt-oss-120b"
+      ;;
+  esac
+
+  export GENERATOR_MODEL="$selected"
+  export BASE_MODEL="$selected"
+  export DEFAULT_MODEL="$selected"
+  set_env_var "GENERATOR_MODEL" "$selected"
+  set_env_var "BASE_MODEL" "$selected"
+  set_env_var "DEFAULT_MODEL" "$selected"
 }
 
 configure_hf_token() {
@@ -312,6 +388,8 @@ configure_runtime_env() {
 
   printf '\n\033[1;34mEnvironment defaults\033[0m\n'
   printf 'Press Enter to keep the current value.\n\n'
+
+  prompt_generator_model
 
   local entry name fallback sep
   sep=$'\t'
