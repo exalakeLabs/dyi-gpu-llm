@@ -136,8 +136,23 @@ def transformers_dtype_kwarg():
     return "dtype" if version >= (4, 51) else "torch_dtype"
 
 
+def rocm_supports_bf16(device_id=0):
+    if not is_rocm():
+        return False
+    try:
+        arch = getattr(torch.cuda.get_device_properties(device_id), "gcnArchName", "")
+        return any(
+            arch.startswith(prefix)
+            for prefix in ("gfx90a", "gfx940", "gfx941", "gfx942", "gfx1100", "gfx1101", "gfx1102")
+        )
+    except Exception:
+        return False
+
+
 def resolve_torch_dtype(dtype_name):
     if dtype_name == "auto":
+        if rocm_supports_bf16():
+            return torch.bfloat16
         if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
             return torch.bfloat16
         if torch.cuda.is_available():
@@ -565,7 +580,14 @@ def make_training_arguments(
     save_steps = max(1, min(requested_save_steps, training_steps))
     eval_steps = save_steps if eval_steps is None else max(1, min(eval_steps, training_steps))
     use_bf16 = dtype == torch.bfloat16
-    use_fp16 = dtype == torch.float16
+    use_fp16 = False
+    if dtype == torch.float16:
+        print(
+            "Note: model dtype is fp16, so Trainer fp16 AMP is disabled. "
+            "Using AMP GradScaler with fp16-loaded parameters raises "
+            "'Attempting to unscale FP16 gradients'. Prefer DEFAULT_DTYPE=bf16 "
+            "on RDNA3/ROCm."
+        )
     dataloader_persistent_workers = (
         dataloader_persistent_workers and dataloader_num_workers > 0
     )
