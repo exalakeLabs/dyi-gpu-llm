@@ -124,6 +124,43 @@ SYSTEM_PROMPT_FILE=prompt_engineer.txt
 
 `SYSTEM_PROMPT` is still supported as a fallback when no prompt file is set.
 
+## Container
+
+The repository includes an Ubuntu-based image for running the same top-level
+launchers inside Docker. Build a backend-specific image:
+
+```bash
+# NVIDIA/CUDA host
+./docker/build.zsh --backend cuda --tag dyi-gpu-llm:cuda
+
+# AMD/ROCm host
+./docker/build.zsh --backend rocm --tag dyi-gpu-llm:rocm
+
+# CPU-only fallback
+./docker/build.zsh --backend cpu --tag dyi-gpu-llm:cpu
+```
+
+Prepare a container env file when you want persistent paths or tokens:
+
+```bash
+cp .env.container.example .env.container
+```
+
+Run with host GPUs exposed:
+
+```bash
+# NVIDIA requires the NVIDIA Container Toolkit on the host.
+./docker/run.zsh --gpu cuda -- chat
+./docker/run.zsh --gpu cuda -- pipeline rag
+
+# ROCm exposes /dev/kfd and /dev/dri.
+./docker/run.zsh --gpu rocm -- zsh
+```
+
+By default, `docker/run.zsh` mounts `.container-data/datasets` at `/datasets`
+and `.container-data/huggingface` at `/cache/huggingface`. Override them with
+`--data-dir` and `--cache-dir`.
+
 ## The Pipeline Runner
 
 `pipeline.zsh` is the main operator interface. It can run complete workflows,
