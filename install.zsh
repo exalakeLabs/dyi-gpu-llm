@@ -302,14 +302,11 @@ prompt_generator_model() {
     fi
   fi
 
-  case "${selected:l}" in
-    gpt-oss:20b|gpt-oss:20)
-      selected="openai/gpt-oss-20b"
-      ;;
-    gpt-oss:120b|gpt-oss:120)
-      selected="openai/gpt-oss-120b"
-      ;;
-  esac
+  if [[ "${selected:l}" == gpt-oss:* ]]; then
+    print -u2 "error: Generator model must be a Hugging Face model id."
+    print -u2 "Use openai/gpt-oss-20b or openai/gpt-oss-120b."
+    return 2
+  fi
 
   export GENERATOR_MODEL="$selected"
   export BASE_MODEL="$selected"
