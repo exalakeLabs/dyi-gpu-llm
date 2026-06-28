@@ -192,7 +192,7 @@ def _meta_offload_error(phase: str, names: list[str] | None = None) -> RuntimeEr
     lines = [
         f"gpt-oss native MXFP4 has meta/offloaded tensors during {phase}.",
         "This Transformers MXFP4 path expects those weights to be live tensors during generation; with disk/meta offload it can crash with 'Tensor on device meta is not on the expected device cuda:0'.",
-        "For openai/gpt-oss-20b, use a GPU with roughly 16GB+ VRAM for the Transformers MXFP4 path, or use a runtime that supports CPU/GPU split for gpt-oss GGUF/Ollama-style execution.",
+        "For openai/gpt-oss-20b, use a GPU with roughly 16GB+ VRAM for the Transformers MXFP4 path, or use a runtime that supports CPU/GPU split for gpt-oss GGUF execution.",
         "On this 12GB RTX/NVIDIA setup, lowering GENERATOR_GPU_MEMORY makes loading safer but increases offload and does not make native MXFP4 offload reliable.",
     ]
     if examples:

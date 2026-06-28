@@ -304,14 +304,6 @@ GEN_OFFLOAD_DIR="${GENERATOR_OFFLOAD_DIR:-${TMPDIR:-/tmp}/llama32-generator-offl
 CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-${PYTORCH_ALLOC_CONF:-expandable_segments:True,max_split_size_mb:128}}"
 
 case "${GENERATOR:l}" in
-  gpt-oss:20b|gpt-oss:20)
-    print -u2 "warning: GENERATOR_MODEL=$GENERATOR is an Ollama-style id; using openai/gpt-oss-20b."
-    GENERATOR="openai/gpt-oss-20b"
-    ;;
-  gpt-oss:120b|gpt-oss:120)
-    print -u2 "warning: GENERATOR_MODEL=$GENERATOR is an Ollama-style id; using openai/gpt-oss-120b."
-    GENERATOR="openai/gpt-oss-120b"
-    ;;
   gpt-oss:*)
     print -u2 "error: GENERATOR_MODEL=$GENERATOR is not a Hugging Face model id."
     print -u2 "Use openai/gpt-oss-20b or openai/gpt-oss-120b."
