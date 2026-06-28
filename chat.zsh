@@ -53,7 +53,17 @@ for name in "${PRESERVE_RUNTIME_ENV[@]}"; do
 done
 
 if [[ -f "$ROOT/.runtime" ]]; then
-  source "$ROOT/.runtime" >/dev/null 2>/dev/null || true
+  if ! source "$ROOT/.runtime" >/dev/null 2>/dev/null; then
+    set -a
+    [[ -f "$ROOT/.env.default" ]] && source "$ROOT/.env.default"
+    [[ -f "$ROOT/.env" ]] && source "$ROOT/.env"
+    set +a
+  fi
+else
+  set -a
+  [[ -f "$ROOT/.env.default" ]] && source "$ROOT/.env.default"
+  [[ -f "$ROOT/.env" ]] && source "$ROOT/.env"
+  set +a
 fi
 for name value in "${(@kv)RUNTIME_ENV_OVERRIDES}"; do
   export "$name=$value"
