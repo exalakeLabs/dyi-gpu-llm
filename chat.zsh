@@ -237,6 +237,8 @@ if (( LOW_VRAM_GPU )); then
           print -u2 "warning: RAG_EMBED_DEVICE=$EMBED_DEVICE is ROCm-specific on an NVIDIA/CUDA host; using cpu for this run."
         fi
         EMBED_DEVICE="cpu"
+      elif ! has_runtime_override RAG_EMBED_DEVICE; then
+        EMBED_DEVICE="cpu"
       fi
     fi
     if [[ -n "${GENERATOR_GPU_MEMORY:-}" ]]; then
