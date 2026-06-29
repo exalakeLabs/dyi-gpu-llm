@@ -326,6 +326,19 @@ def load_base_model(base_model: str = BASE_MODEL, **kwargs):
                     ]
                 )
             ) from exc
+        if "out of memory" in message.lower():
+            raise RuntimeError(
+                "\n".join(
+                    [
+                        "Generator model loading ran out of GPU memory.",
+                        "On an 8GB Radeon/ROCm card, use device_map=auto with CPU offload and leave GPU headroom:",
+                        "  LOW_VRAM_ROCM_RUNTIME=rocm GENERATOR_DEVICE_MAP=auto GENERATOR_GPU_MEMORY=5GiB ./chat.zsh",
+                        "If this still fails for a 7B model, use a smaller model such as Qwen/Qwen2.5-3B-Instruct or run the generator on CPU:",
+                        "  LOW_VRAM_ROCM_RUNTIME=cpu ./chat.zsh",
+                        f"Current caps: GENERATOR_GPU_MEMORY={GENERATOR_GPU_MEMORY or '<none>'}, GENERATOR_CPU_MEMORY={GENERATOR_CPU_MEMORY or '<none>'}.",
+                    ]
+                )
+            ) from exc
         raise
 
     if _uses_native_mxfp4(base_model) and torch.cuda.is_available() and not GENERATOR_ALLOW_META_OFFLOAD:

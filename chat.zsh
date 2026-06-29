@@ -207,7 +207,14 @@ EMBED_DEVICE="${RAG_EMBED_DEVICE:-cpu}"
 if (( LOW_VRAM_GPU )); then
   if [[ "${LOW_VRAM_RUNTIME:l}" == "cuda" || "${LOW_VRAM_RUNTIME:l}" == "rocm" || "${LOW_VRAM_RUNTIME:l}" == "gpu" ]]; then
     if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
-      GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-single}"
+      if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
+        GEN_DEVICE_MAP="auto"
+        if [[ -n "${GENERATOR_DEVICE_MAP:-}" && "${GENERATOR_DEVICE_MAP:l}" != "auto" ]]; then
+          GPU_CAP_WARNING="Ignoring GENERATOR_DEVICE_MAP=$GENERATOR_DEVICE_MAP on an ${LOW_VRAM_TOTAL_MIB} MiB ROCm GPU; using device_map=auto for CPU/GPU offload."
+        fi
+      else
+        GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-single}"
+      fi
       REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-rocm}"
     else
       GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
@@ -218,7 +225,16 @@ if (( LOW_VRAM_GPU )); then
       GEN_GPU_MEMORY_GIB="${GEN_GPU_MEMORY:l}"
       if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 && "$GEN_GPU_MEMORY_GIB" == <->gib ]]; then
         GEN_GPU_MEMORY_GIB="${GEN_GPU_MEMORY_GIB%gib}"
-        if (( GEN_GPU_MEMORY_GIB > 6 )); then
+        if [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
+          if (( GEN_GPU_MEMORY_GIB > 5 )); then
+            GEN_GPU_MEMORY="5GiB"
+            if [[ -n "$GPU_CAP_WARNING" ]]; then
+              GPU_CAP_WARNING="${GPU_CAP_WARNING} Also clamped GENERATOR_GPU_MEMORY to 5GiB to leave ROCm allocation headroom."
+            else
+              GPU_CAP_WARNING="Clamped GENERATOR_GPU_MEMORY to 5GiB to leave ROCm allocation headroom on an ${LOW_VRAM_TOTAL_MIB} MiB GPU."
+            fi
+          fi
+        elif (( GEN_GPU_MEMORY_GIB > 6 )); then
           GPU_CAP_WARNING="GENERATOR_GPU_MEMORY=$GEN_GPU_MEMORY leaves little MXFP4 conversion headroom on a 12 GB NVIDIA GPU; retry with 4GiB if CUDA reports device not ready."
         fi
       fi
@@ -229,7 +245,11 @@ if (( LOW_VRAM_GPU )); then
         GEN_GPU_MEMORY="14GiB"
       fi
     elif [[ "$LOW_VRAM_KIND" == "ROCm" ]]; then
-      GEN_GPU_MEMORY="7GiB"
+      if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
+        GEN_GPU_MEMORY="5GiB"
+      else
+        GEN_GPU_MEMORY="7GiB"
+      fi
     else
       GEN_GPU_MEMORY="5GiB"
     fi
