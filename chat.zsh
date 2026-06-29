@@ -226,11 +226,21 @@ if (( LOW_VRAM_GPU )); then
         REQUIRE_ACCELERATOR="rocm"
       fi
     else
-      GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
-      if has_runtime_override CHAT_REQUIRE_ACCELERATOR; then
-        REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-cuda}"
+      if [[ "$LOW_VRAM_TOTAL_MIB" == <-> && "$LOW_VRAM_TOTAL_MIB" -le 12288 ]]; then
+        GEN_DEVICE_MAP="auto"
+        if [[ -n "${GENERATOR_DEVICE_MAP:-}" && "${GENERATOR_DEVICE_MAP:l}" != "auto" ]]; then
+          GPU_CAP_WARNING="Ignoring GENERATOR_DEVICE_MAP=$GENERATOR_DEVICE_MAP on a ${LOW_VRAM_TOTAL_MIB} MiB NVIDIA GPU; using device_map=auto for CPU/GPU offload."
+        fi
       else
-        REQUIRE_ACCELERATOR="cuda"
+        GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
+      fi
+      REQUIRE_ACCELERATOR="cuda"
+      if [[ -n "${CHAT_REQUIRE_ACCELERATOR:-}" && "${CHAT_REQUIRE_ACCELERATOR:l}" != "cuda" && "${CHAT_REQUIRE_ACCELERATOR:l}" != "gpu" && "${CHAT_REQUIRE_ACCELERATOR:l}" != "accelerator" ]]; then
+        if [[ -n "$GPU_CAP_WARNING" ]]; then
+          GPU_CAP_WARNING="${GPU_CAP_WARNING} Also ignoring CHAT_REQUIRE_ACCELERATOR=$CHAT_REQUIRE_ACCELERATOR on an NVIDIA/CUDA host; using cuda."
+        else
+          GPU_CAP_WARNING="Ignoring CHAT_REQUIRE_ACCELERATOR=$CHAT_REQUIRE_ACCELERATOR on an NVIDIA/CUDA host; using cuda."
+        fi
       fi
       if [[ "${EMBED_DEVICE:l}" == rocm* || "${EMBED_DEVICE:l}" == hip* ]]; then
         if has_runtime_override RAG_EMBED_DEVICE; then
@@ -256,11 +266,11 @@ if (( LOW_VRAM_GPU )); then
             fi
           fi
         elif (( GEN_GPU_MEMORY_GIB > 6 )); then
-          if has_runtime_override GENERATOR_GPU_MEMORY; then
-            GPU_CAP_WARNING="GENERATOR_GPU_MEMORY=$GEN_GPU_MEMORY leaves little MXFP4 conversion headroom on a 12 GB NVIDIA GPU; retry with 4GiB if CUDA reports device not ready."
+          GEN_GPU_MEMORY="4GiB"
+          if [[ -n "$GPU_CAP_WARNING" ]]; then
+            GPU_CAP_WARNING="${GPU_CAP_WARNING} Also clamped GENERATOR_GPU_MEMORY to 4GiB to leave NVIDIA allocation headroom."
           else
-            GEN_GPU_MEMORY="4GiB"
-            GPU_CAP_WARNING="Clamped env-file GENERATOR_GPU_MEMORY to 4GiB for a ${LOW_VRAM_TOTAL_MIB} MiB NVIDIA GPU."
+            GPU_CAP_WARNING="Clamped GENERATOR_GPU_MEMORY to 4GiB for a ${LOW_VRAM_TOTAL_MIB} MiB NVIDIA GPU."
           fi
         fi
       fi
