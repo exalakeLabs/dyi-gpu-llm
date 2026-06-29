@@ -93,6 +93,11 @@ if [[ -n "${GENERATOR_CPU_MEMORY:-}" ]]; then
   GEN_CPU_MEMORY_OVERRIDDEN=1
 fi
 
+has_runtime_override() {
+  local name="$1"
+  (( ${+RUNTIME_ENV_OVERRIDES[$name]} ))
+}
+
 detect_cpu_memory_cap() {
   local total_kib total_gib reserve_gib cap_gib
 
@@ -215,10 +220,24 @@ if (( LOW_VRAM_GPU )); then
       else
         GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-single}"
       fi
-      REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-rocm}"
+      if has_runtime_override CHAT_REQUIRE_ACCELERATOR; then
+        REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-rocm}"
+      else
+        REQUIRE_ACCELERATOR="rocm"
+      fi
     else
       GEN_DEVICE_MAP="${GENERATOR_DEVICE_MAP:-auto}"
-      REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-cuda}"
+      if has_runtime_override CHAT_REQUIRE_ACCELERATOR; then
+        REQUIRE_ACCELERATOR="${CHAT_REQUIRE_ACCELERATOR:-cuda}"
+      else
+        REQUIRE_ACCELERATOR="cuda"
+      fi
+      if [[ "${EMBED_DEVICE:l}" == rocm* || "${EMBED_DEVICE:l}" == hip* ]]; then
+        if has_runtime_override RAG_EMBED_DEVICE; then
+          print -u2 "warning: RAG_EMBED_DEVICE=$EMBED_DEVICE is ROCm-specific on an NVIDIA/CUDA host; using cpu for this run."
+        fi
+        EMBED_DEVICE="cpu"
+      fi
     fi
     if [[ -n "${GENERATOR_GPU_MEMORY:-}" ]]; then
       GEN_GPU_MEMORY="$GENERATOR_GPU_MEMORY"
@@ -235,7 +254,12 @@ if (( LOW_VRAM_GPU )); then
             fi
           fi
         elif (( GEN_GPU_MEMORY_GIB > 6 )); then
-          GPU_CAP_WARNING="GENERATOR_GPU_MEMORY=$GEN_GPU_MEMORY leaves little MXFP4 conversion headroom on a 12 GB NVIDIA GPU; retry with 4GiB if CUDA reports device not ready."
+          if has_runtime_override GENERATOR_GPU_MEMORY; then
+            GPU_CAP_WARNING="GENERATOR_GPU_MEMORY=$GEN_GPU_MEMORY leaves little MXFP4 conversion headroom on a 12 GB NVIDIA GPU; retry with 4GiB if CUDA reports device not ready."
+          else
+            GEN_GPU_MEMORY="4GiB"
+            GPU_CAP_WARNING="Clamped env-file GENERATOR_GPU_MEMORY to 4GiB for a ${LOW_VRAM_TOTAL_MIB} MiB NVIDIA GPU."
+          fi
         fi
       fi
     elif [[ "$LOW_VRAM_KIND" == "NVIDIA" || "$LOW_VRAM_KIND" == "CUDA" ]]; then
