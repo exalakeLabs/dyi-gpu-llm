@@ -10,6 +10,7 @@ RAW_TEXT_OUTPUT_DIR="${RAWTEXT_DIR:-}"
 PREPARED_OUTPUT_DIR="${PREPARED_DIR:-}"
 CORPUS_OUTPUT_DIR="${CORPUS_DIR:-}"
 RAG_OUTPUT_DIR="${RAG_DIR:-}"
+CORPUS_TOKEN_OUTPUT_DIR="${DEFAULT_CORPUS_TOKEN_DIR:-}"
 RUN_GUTENBERG=1
 RUN_WIKIPEDIA=1
 RUN_HTML=0
@@ -22,6 +23,7 @@ WIKI_CRAWL_DEPTH="${WIKI_CRAWL_DEPTH:-1}"
 WIKI_CRAWL_MAX_PAGES="${WIKI_CRAWL_MAX_PAGES:-240}"
 WIKI_CRAWL_LINKS_PER_PAGE="${WIKI_CRAWL_LINKS_PER_PAGE:-35}"
 DATASET_NUM_PROC="${DATASET_NUM_PROC:-}"
+CORPUS_TOKEN_BLOCK_SIZE="${CORPUS_TOKEN_BLOCK_SIZE:-}"
 TRAINING_PAIRS_TRAIN="${TRAINING_PAIRS_TRAIN:-}"
 TRAINING_PAIRS_VAL="${TRAINING_PAIRS_VAL:-}"
 
@@ -35,6 +37,7 @@ Commands:
   raw-text            Only download raw text.
   clean-text          Only clean raw text into prepared text.
   pretrain-corpus     Only create packed token corpora for continued pretraining.
+  create-corpus-token Create a packed Hugging Face token Dataset independently.
   pairs               Only create instruction/training pairs.
   rag                 Build the RAG index.
   pretrain            Run continued pretraining.
@@ -54,6 +57,8 @@ Corpus/download options:
   --output-dir DIR       Alias for --raw-dir, kept for old raw-text usage.
   --prepared-dir DIR     Cleaned text directory (default: PREPARED_DIR or prepared).
   --corpus-dir DIR       Corpus output directory (default: CORPUS_DIR or corpus).
+  --token-dir DIR        CreateCorpusToken output directory (default: DEFAULT_CORPUS_TOKEN_DIR).
+  --block-size N         CreateCorpusToken block size (default: DEFAULT_SEQ_LEN).
   --skip-download        Do not download raw text during the corpus command.
   --skip-clean           Do not clean text during the corpus command.
   --skip-pretrain-corpus Do not create packed token corpora during the corpus command.
@@ -165,7 +170,7 @@ prompt_pipeline_commands() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    all|corpus|raw-text|clean-text|pretrain-corpus|pairs|rag|pretrain|lora|install-gh|amd-monitor)
+    all|corpus|raw-text|clean-text|pretrain-corpus|create-corpus-token|pairs|rag|pretrain|lora|install-gh|amd-monitor)
       COMMANDS+=("$1")
       shift
       ;;
@@ -208,6 +213,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --corpus-dir)
       CORPUS_OUTPUT_DIR="${2:?missing directory for --corpus-dir}"
+      shift 2
+      ;;
+    --token-dir)
+      CORPUS_TOKEN_OUTPUT_DIR="${2:?missing directory for --token-dir}"
+      shift 2
+      ;;
+    --block-size)
+      CORPUS_TOKEN_BLOCK_SIZE="${2:?missing value for --block-size}"
       shift 2
       ;;
     --rag-dir)
@@ -303,11 +316,20 @@ if [[ -f "$ROOT/.runtime" ]]; then
     if [[ -x "$ROOT/.venv/bin/python" ]]; then
       PYTHON="$ROOT/.venv/bin/python"
     fi
+    set -a
+    [[ -f "$ROOT/.env.default" ]] && source "$ROOT/.env.default"
+    [[ -f "$ROOT/.env" ]] && source "$ROOT/.env"
+    set +a
   fi
 elif [[ -x "$ROOT/.venv/bin/python" ]]; then
   PYTHON="$ROOT/.venv/bin/python"
 fi
-if [[ -f "$ROOT/.env" ]]; then
+if [[ -f "$ROOT/.env" && -z "${DEFAULT_MODEL:-}" ]]; then
+  set -a
+  [[ -f "$ROOT/.env.default" ]] && source "$ROOT/.env.default"
+  source "$ROOT/.env"
+  set +a
+elif [[ -f "$ROOT/.env" ]]; then
   set -a
   source "$ROOT/.env"
   set +a
@@ -317,8 +339,10 @@ PYTHON="${PYTHON:-python3}"
 RAW_TEXT_OUTPUT_DIR="${RAW_TEXT_OUTPUT_DIR:-${RAWTEXT_DIR:-text}}"
 PREPARED_OUTPUT_DIR="${PREPARED_OUTPUT_DIR:-${PREPARED_DIR:-prepared}}"
 CORPUS_OUTPUT_DIR="${CORPUS_OUTPUT_DIR:-${CORPUS_DIR:-corpus}}"
+CORPUS_TOKEN_OUTPUT_DIR="${CORPUS_TOKEN_OUTPUT_DIR:-${DEFAULT_CORPUS_TOKEN_DIR:-$CORPUS_OUTPUT_DIR/tokenized}}"
 RAG_OUTPUT_DIR="${RAG_OUTPUT_DIR:-${RAG_DIR:-rag}}"
 DATASET_NUM_PROC="${DATASET_NUM_PROC:-${DEFAULT_DATASET_NUM_PROC:-1}}"
+CORPUS_TOKEN_BLOCK_SIZE="${CORPUS_TOKEN_BLOCK_SIZE:-${DEFAULT_SEQ_LEN:-2048}}"
 TRAINING_PAIRS_TRAIN="${TRAINING_PAIRS_TRAIN:-$CORPUS_OUTPUT_DIR/training_pairs_train.jsonl}"
 TRAINING_PAIRS_VAL="${TRAINING_PAIRS_VAL:-$CORPUS_OUTPUT_DIR/training_pairs_val.jsonl}"
 
@@ -647,6 +671,17 @@ run_pretrain_corpus() {
     --num_proc "$DATASET_NUM_PROC"
 }
 
+run_create_corpus_token() {
+  mkdir -p "${CORPUS_TOKEN_OUTPUT_DIR:h}"
+  run_cmd "$PYTHON" "$ROOT/src/data_prep/create_corpus_token.py" \
+    --text_dir "$PREPARED_OUTPUT_DIR" \
+    --output_dir "$CORPUS_TOKEN_OUTPUT_DIR" \
+    --model_name "${DEFAULT_MODEL:-${BASE_MODEL:-${GENERATOR_MODEL:-}}}" \
+    --block_size "$CORPUS_TOKEN_BLOCK_SIZE" \
+    --num_proc "$DATASET_NUM_PROC" \
+    "${PASSTHROUGH_ARGS[@]}"
+}
+
 run_pairs() {
   mkdir -p "$CORPUS_OUTPUT_DIR"
   run_cmd "$PYTHON" "$ROOT/src/data_prep/make_training_pairs.py" \
@@ -824,6 +859,9 @@ for command in "${expanded_commands[@]}"; do
       ;;
     pretrain-corpus)
       run_pretrain_corpus
+      ;;
+    create-corpus-token)
+      run_create_corpus_token
       ;;
     pairs)
       run_pairs

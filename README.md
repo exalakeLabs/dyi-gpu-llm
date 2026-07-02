@@ -196,6 +196,39 @@ If you change `DEFAULT_SEQ_LEN`, rebuild the packed corpus:
 For quick low-VRAM tests, `DEFAULT_MAX_TRAIN_TOKENS` can cap packed examples at
 training time even before you rebuild the JSONL corpus.
 
+### CreateCorpusToken
+
+`CreateCorpusToken` is an independent preprocessing step for building a packed
+Hugging Face Dataset from cleaned text. It follows the packed-stream pattern:
+tokenize with the target model tokenizer, append EOS between documents, split
+the stream into fixed-length blocks, and save `input_ids`, `attention_mask`, and
+`labels` with `Dataset.save_to_disk`.
+
+Run it directly:
+
+```bash
+python3 src/create_corpus_token.py \
+  --text_dir "$PREPARED_DIR" \
+  --output_dir "$DEFAULT_CORPUS_TOKEN_DIR" \
+  --model_name "$DEFAULT_MODEL" \
+  --block_size 4096 \
+  --num_proc 8 \
+  --overwrite
+```
+
+Or through the workflow runner:
+
+```bash
+./run-train-pipeline.zsh create-corpus-token \
+  --token-dir "$DEFAULT_CORPUS_TOKEN_DIR" \
+  --block-size 4096 \
+  --num-proc 8 \
+  -- --overwrite
+```
+
+The output directory also includes `create_corpus_token_manifest.json` recording
+the tokenizer/model, source directory, block size, and number of packed blocks.
+
 ### RAG Stage
 
 Build a FAISS index from `PREPARED_DIR`:
